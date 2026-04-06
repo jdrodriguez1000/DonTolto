@@ -1,0 +1,111 @@
+# 🚀 Proyecto: DonTolto
+
+**DonTolto** es un ecosistema de simulación masiva, benchmarking y analítica predictiva para los sorteos de **Baloto** y **Revancha** en Colombia. El sistema procesa **1,802 combinaciones por tipo de sorteo**, utilizando un motor de simulación Monte Carlo para optimizar la estrategia maestra.
+
+---
+
+## 🛠 Stack Tecnológico
+
+| Capa | Tecnología |
+| :--- | :--- |
+| **Frontend** | **Next.js** (App Router) + **TypeScript** |
+| **Backend / Scripting** | **Python** (FastAPI + Pandas + NumPy para Monte Carlo) |
+| **Base de Datos** | **Supabase** (PostgreSQL) |
+| **Automatización** | **GitHub Actions** (Cron Jobs) |
+| **Despliegue** | **Vercel** |
+
+---
+
+## 🏆 Matriz de Estrategias (1,802 Juegos por Sorteo)
+
+| Estrategia | Cantidad | Lógica / Origen |
+| :--- | :---: | :--- |
+| **🔥 Caliente** | 300 | Pool de los más frecuentes (últimos 50). |
+| **❄️ Fría** | 300 | Pool de los menos frecuentes (últimos 50). |
+| **🎲 Aleatoria** | 300 | Azar puro (Grupo de Control). |
+| **💎 Elite** | 300 | Algoritmo de Puntuación Ponderada. |
+| **📌 Única** | 1 | Combinación fija permanente. |
+| **🧬 Mixta** | 300 | 80% Líder actual + 20% Segundo líder. |
+| **⚖️ Balanceada** | 300 | 2 Calientes + 2 Fríos + 1 Aleatorio. |
+| **🔍 Real** | **1** | **Estrategia Real (1M sims)** |
+| **TOTAL** | **1,802** | **Registros procesados en cada ciclo.** |
+
+---
+
+## 🧠 El Motor de la Estrategia Real
+
+La **Real** es la joya de la corona de DonTolto. Su generación sigue un proceso de tres etapas de filtrado masivo:
+
+1.  **Identificación de Líderes:** El sistema selecciona la mejor combinación de las **dos estrategias** líderes del ranking trimestral.
+2.  **Generación del Candidato Base:** Esa combinación se toma como base para generar mutaciones inteligentes (pool de candidatos).
+3.  **Simulación Monte Carlo:**
+    * Se ejecutan **1,000,000 de sorteos ficticios**.
+    * El candidato y sus mutaciones se enfrentan al millón de sorteos mediante vectorización.
+    * La combinación que obtiene el mayor puntaje de aciertos acumulados en la simulación se convierte en la **Combinación Real Final** para el próximo sorteo real.
+
+---
+
+## ⚙️ Flujo Operativo Cíclico
+
+1.  **Sincronización:** Se actualiza el historial con el sorteo real recién jugado.
+2.  **Evaluación:** Se comparan los **1,802 juegos anteriores** generados para Baloto y también para Revancah contra el sorteo real. Se registran `aciertos_numeros`, `acierto_sb` y `total_aciertos` en la tabla `simulaciones_resultados`.
+3.  **Inferencia y Ranking:** Se identifican las estrategias #1 y #2 para alimentar el siguiente ciclo.
+4.  **Generación (Proceso Pesado):**
+    * Se ejecutan los algoritmos para las estrategias masivas (300 c/u).
+    * Se ejecuta el proceso de **1M de Monte Carlo** para parir la nueva **Real**.
+5.  **Carga Masiva:** Se suben los 1,802 juegos proyectados a la base de datos para el próximo sorteo.
+
+
+## ⚙️ Flujo Operativo del Sistema
+
+El motor de DonTolto opera bajo un ciclo de tres pasos principales ejecutados de forma recurrente:
+
+### Fase A: Arranque e Historial (Día 1)
+1.  **Carga Inicial:** Se descarga el historial completo de Baloto y Revancha.
+2.  **Sincronización:** Si ya existen juegos previos, se realiza la comparación técnica.
+3.  **Generación Inicial:** Se crean los primeros 1,802 juegos para el próximo sorteo disponible, tanto para Baloto como para REvancha
+
+### Fase B: El Ciclo Recurrente (Steady State)
+Cada martes, jueves y domingo a las 3:30 AM COT:
+1.  **Actualización Delta:** Se añade el nuevo sorteo real a la tabla `historico_sorteos`.
+2.  **Evaluación Masiva:** Se comparan los 1,802 juegos generados anteriormente contra el sorteo real recién cargado de cada tipo
+3.  **Registro de Aciertos:** Se guardan los resultados en la tabla `simulaciones_resultados`.
+4.  **Inferencia:** Se recalculan los pools (Caliente, Frío, Elite, Mixta).
+5.  **Nueva Proyección:** Se generan los 1,802 juegos para el siguiente sorteo programado tanto de Baloto como de Revancha.
+
+
+
+## Estrategia Elite: El Algoritmo
+
+La estrategia Elite no usa pools simples, sino un sistema de puntos para cada número:
+
+1.  **Factor Frecuencia (30%):** Puntos por aparecer en el top de los últimos 50 juegos.
+2.  **Factor Intervalo/Gap (30%):** Puntos si el número está en su "ventana de aparición" promedio (Análisis de ciclos).
+3.  **Factor Sinergia (20%):** Puntos si el número suele salir acompañado de otros números que ya puntuaron alto.
+4.  **Factor Paridad/Suma (20%):** Filtro final que asegura que la combinación tenga un equilibrio ideal (ej. 3 pares / 2 impares) y una suma total entre 130 y 180.
+**Súper Balota Elite:** Se selecciona cruzando la frecuencia histórica con el análisis de "atraso" (cuántos sorteos lleva sin salir vs. su promedio histórico).
+
+
+
+## Automatización (GitHub Actions)
+Se ejecuta un *Cron Job* los días **martes, jueves y domingos** a las **3:30 AM (Hora Colombia / COT)**.
+* **Martes:** Revisa el sorteo del lunes.
+* **Jueves:** Revisa el sorteo del miércoles.
+* **Domingo:** Revisa el sorteo del sábado.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
