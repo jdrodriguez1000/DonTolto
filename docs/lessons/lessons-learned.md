@@ -87,3 +87,60 @@ Un test que pasa en la fase RED por razones incorrectas (falso positivo) invalid
 
 **Leccion 6 — Documentar stubs y centinelas con comentarios inline**
 Los valores centinela (como `latency_ms=0.1`) deben acompanarse de un comentario inline que explique que son simulados y en que tarea se reemplazaran con valores reales. Sin este comentario, el proximo desarrollador o agente no puede distinguir entre un valor de produccion y un placeholder de prueba.
+
+---
+
+## Sesion: 2026-04-07 (Fase 1, Etapa 1.0 — Bloque 3: Handshaking de APIs Externas)
+
+### Exitos y Aciertos Tecnicos
+
+**Granularidad de suites de tests: un archivo por servicio externo**
+La decision de crear `test_github_handshake.py`, `test_resend_handshake.py`, `test_upstash_handshake.py` y `test_supabase_handshake.py` en lugar de un monolito `test_handshakes.py` resulto en suites independientes, faciles de ejecutar en aislamiento y sin acoplamiento entre servicios. En CI/CD, un fallo de GitHub no contamina el reporte de Supabase. Este patron debe estandarizarse para todos los bloques con multiples servicios externos.
+
+**Mock de `httpx.get` a nivel de modulo sin alias interno**
+Parchear `httpx.get` directamente (no `engine.src.check_env.httpx.get`) resultó mas robusto porque no depende de como el modulo interno referencia la funcion. Este patron es mas resiliente ante refactorizaciones que cambien el nombre del alias de importacion.
+
+**`latency_ms = max((end - start) * 1000, 0.001)` como patron canónico**
+El minimo garantizado de `0.001 ms` resuelve de forma elegante la restriccion `Field(gt=0)` del modelo `ServiceResult` incluso con mocks instantaneos (donde `time.monotonic()` puede retornar diferencias de 0 µs). Este patron debe replicarse en todos los checks del Bloque 4 sin excepcion.
+
+**Ciclo TDD con revisiones bloqueantes: el reviewer rechazó en primera pasada**
+El `backend-reviewer` en TSK-12.1-CERT emitio TOKEN:RECHAZADO con dos defectos bloqueantes reales (bug de telemetria en `check_supabase_sql` y sanitizacion nunca invocada). El `backend-coder` los corrigio, la segunda pasada resulto en APROBADO. Esta secuencia —rechazo, correccion, re-certificacion— es el ciclo sano esperado, no una anomalia. El sistema de certificacion funciona correctamente cuando emite rechazos con hallazgos concretos.
+
+**Security-hardener identificó deuda de defensa en profundidad sin bloquear**
+El security-hardener encontro que `sanitizer.py` (Capa 2 con regex de headers) existia pero no era invocada desde `_sanitize_checks`. No habia fuga confirmada, pero sí una capa de defensa inactiva. Al clasificarlo como hallazgo no bloqueante con recomendacion concreta (invocar `sanitize_service_result` en lugar de llamar directamente a `sanitize_log_message`), el auditor permitio avanzar sin bloquear el sprint mientras la deuda queda registrada para TSK-19.1-REFACTOR.
+
+---
+
+### Fricciones y Desafios
+
+**DEF-01 — Bug silencioso de telemetria: `end_err - end_err = 0.0`**
+En `check_supabase_sql`, el path de error calculaba `latency_ms = max((end_err - end_err) * 1000, 0.001)`, produciendo siempre `0.001 ms` independientemente del tiempo transcurrido. El bug era completamente silencioso: pasaba todos los tests, no lanzaba excepciones y producía un artefacto de telemetria corrupto. La causa raiz fue copiar el patron de latencia de las funciones HTTP (donde `start` esta dentro del `try`) sin adaptar la estructura de `check_supabase_sql` que tiene reintentos con `start` debia estar fuera del loop. Leccion: los bugs de telemetria que no rompen la suite son los mas peligrosos porque permanecen ocultos en produccion.
+
+**DEF-02 — Sanitizacion implementada pero nunca invocada**
+`sanitize_log_message` existia en `utils.py` y `sanitize_service_result` en `sanitizer.py` desde el Bloque 2, pero ninguna era llamada desde el flujo principal de `check_env.py`. Esto violaba el mandato SPEC §3.2.2 explicitamente. La causa raiz: el Bloque 2 implementó las utilidades de sanitizacion como infraestructura, pero el punto de invocacion (`main()` en `check_env.py`) no existia todavia en ese momento. Al implementar los handshakes en el Bloque 3 no se verifico la integracion con las utilidades ya existentes. Leccion: las utilidades de seguridad no activan su proteccion por el simple hecho de existir — deben ser invocadas explicitamente y verificadas en CERT.
+
+**Hallazgo H-2 — `psycopg2.connect` sin `connect_timeout`**
+La implementacion de `check_supabase_sql` no incluyo `connect_timeout` en `psycopg2.connect`. En un runner de GHA con timeout total de 25 minutos, 3 reintentos sin timeout de conexion pueden consumir el presupuesto total del workflow. La correccion (agregar `connect_timeout=10`) fue diferida al Bloque 4 donde el `db-manager` tendra contexto completo sobre el patron de conexion. Esto fue una decision consciente de diferimiento, no un olvido.
+
+**Contrato de argumento posicional en `psycopg2.connect` impuesto por el test**
+El test `test_check_supabase_sql_calls_psycopg2_connect` inspeccionaba `call_args.args[0]` para verificar que la URL fue pasada como argumento posicional. Esto creo una dependencia fragil entre el test y la forma de invocacion. Si en el Bloque 4 se necesita refactorizar la llamada a keyword (`psycopg2.connect(dsn=db_url)`), el test fallara aunque la logica sea equivalente. Esta decision de diseno del test debe ser revisada en TSK-19.1-REFACTOR.
+
+---
+
+### Leccion Clave y Recomendacion
+
+**Leccion 7 — Los bugs silenciosos de telemetria son los mas costosos en produccion**
+Un bug que no rompe tests pero corrompe datos de observabilidad (como `end_err - end_err = 0.0`) es categoricamente mas peligroso que un bug que falla ruidosamente. En un sistema de diagnostico como `check_env.py`, la telemetria corrupta puede llevar a decisiones operativas incorrectas (ej: pensar que Postgres falla instantaneamente cuando en realidad esta tardando 21 segundos con 3 reintentos). La CERT debe incluir inspeccion explicita de los paths de error, no solo los paths felices.
+
+**Leccion 8 — Las utilidades de seguridad requieren verificacion de integracion en CERT**
+Que una funcion de sanitizacion exista en el codebase no garantiza que este activa en produccion. El reviewer y el security-hardener deben verificar explicitamente que las funciones de seguridad son invocadas en el flujo principal, no solo que existen y pasan sus propios tests unitarios. Propuesta para el checklist de CERT: agregar un punto "verificar que toda utilidad de seguridad documentada en SPEC tiene al menos una invocacion trazable desde `main()`".
+
+**Leccion 9 — La granularidad de mocks determina la robustez de los tests ante refactorizaciones**
+Parchear `httpx.get` a nivel de modulo (en lugar de a traves del namespace de `check_env`) produce tests mas resilientes. Igualmente, la dependencia del test de psycopg2 en el argumento posicional (`call_args.args[0]`) es una fragilidad que debe eliminarse. La regla general: los tests deben verificar el comportamiento observable (que la URL correcta fue usada), no el mecanismo interno de invocacion (posicional vs. keyword). Usar `assert mock_connect.call_args == call(db_url)` en lugar de `call_args.args[0]`.
+
+**Leccion 10 — Diferir deuda tecnica de seguridad con registro explicito es mejor que parchear precipitadamente**
+La recomendacion H-2 (connect_timeout) fue diferida conscientemente al Bloque 4. Esta decision es valida y profesional siempre que: (a) la deuda sea registrada con su riesgo documentado, (b) tenga una tarea de resolucion asignada, y (c) no haya una fuga de credenciales activa. Diferir sin registrar es deuda oculta; diferir con registro es gestion de deuda transparente.
+
+---
+
+**APRENDIZAJE_REGISTRADO_OK**

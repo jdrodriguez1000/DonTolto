@@ -12,9 +12,9 @@
 | :----------------- | :---------------------------------------------------------------------- |
 | **Fase Activa**    | Fase 1 — Infraestructura de Datos (Cimentacion)                         |
 | **Etapa Activa**   | 1.0 — Validacion de Entorno                                             |
-| **Bloque Activo**  | Bloque 3 — Handshaking de APIs Externas [TDD Cycle] — PENDIENTE         |
+| **Bloque Activo**  | Bloque 4 — Database & Persistencia [TDD Cycle] — PENDIENTE              |
 | **Rama Git**       | `feat/f1_1.0_env_validation`                                            |
-| **Ultimo Commit**  | `d9b5b5c` — `feat: adicionado blueprint de variables de entorno (.env.example)` |
+| **Ultimo Commit**  | `3b71c6d` — `feat: implementación completa de la validación de entorno (f1_1.0)` |
 | **Capas Tecnicas** | Backend (Python Engine), Infra (Dependencias/Entorno)                  |
 
 ---
@@ -41,58 +41,76 @@
 | TSK-F1_1.0-08-GREEN    | backend-coder       | Orquestador Core, Agregacion y Logica de Salida      | Completado |
 | TSK-F1_1.0-09-CERT     | backend-reviewer    | CERTIFICACION TECNICA CORE — APROBADO                | Completado |
 
-### Resultado de Suite de Pruebas al Cierre de Bloque 2
+### Estado del Bloque 3 — Handshaking de APIs Externas [TDD Cycle]: 100% COMPLETADO
 
-**43 passed, 0 failed** (ejecucion en 0.29s)
+| Tarea                  | Agente              | Descripcion                                              | Estado     |
+| :--------------------- | :------------------ | :------------------------------------------------------- | :--------- |
+| TSK-F1_1.0-10.1-RED    | backend-tester      | Tests fallidos: GitHub Handshake (8 tests)               | Completado |
+| TSK-F1_1.0-10.2-RED    | backend-tester      | Tests fallidos: Resend Handshake (8 tests)               | Completado |
+| TSK-F1_1.0-10.3-RED    | backend-tester      | Tests fallidos: Upstash Redis Handshake (8 tests)        | Completado |
+| TSK-F1_1.0-10.4-RED    | backend-tester      | Tests fallidos: Supabase REST/SQL (12 tests)             | Completado |
+| TSK-F1_1.0-11.1-GREEN  | backend-coder       | Implementacion Handshake GitHub                          | Completado |
+| TSK-F1_1.0-11.2-GREEN  | backend-coder       | Implementacion Handshake Resend                          | Completado |
+| TSK-F1_1.0-11.3-GREEN  | backend-coder       | Implementacion Handshake Upstash                         | Completado |
+| TSK-F1_1.0-11.4-GREEN  | backend-coder       | Implementacion Handshake Supabase REST + SQL             | Completado |
+| TSK-F1_1.0-12.1-CERT   | backend-reviewer    | Certificacion de Mapeo de Contratos API — APROBADO       | Completado |
+| TSK-F1_1.0-12.2-CERT   | security-hardener   | Certificacion de Scopes y Seguridad de APIs — APROBADO   | Completado |
+
+### Resultado de Suite de Pruebas al Cierre de Bloque 3
+
+**79 passed, 0 failed**
 
 Distribucion de tests:
-- `engine/tests/test_models.py` — 15 tests (modelos Pydantic `CheckStatus`, `ServiceResult`, `RunReport`, `validate_env_vars`)
-- `engine/tests/test_sanitizer.py` — 10 tests (sanitizacion `sanitize_service_result`)
-- `engine/tests/test_orchestrator.py` — 12 tests (logica del orquestador `check_env.py`)
-- `engine/tests/test_orchestrator_output.py` — 6 tests (formato de salida GHA)
+- `engine/tests/test_models.py` — 15 tests (modelos Pydantic)
+- `engine/tests/test_sanitizer.py` — 10 tests (sanitizacion)
+- `engine/tests/test_orchestrator.py` — 12 tests (logica del orquestador)
+- `engine/tests/test_orchestrator_output.py` — 6 tests (formato salida GHA)
+- `engine/tests/test_github_handshake.py` — 8 tests (GitHub API)
+- `engine/tests/test_resend_handshake.py` — 8 tests (Resend API)
+- `engine/tests/test_upstash_handshake.py` — 8 tests (Upstash Redis)
+- `engine/tests/test_supabase_handshake.py` — 12 tests (Supabase HTTP + SQL)
 
 ### Resumen de Progreso Global
 
 - **Bloque 1**: 3/3 tareas completadas (100%)
 - **Bloque 2**: 7/7 tareas completadas (100%)
-- **Bloque 3**: 0/10 tareas completadas (0%) — es el bloque activo siguiente
-- **Bloques 4-5 + Cierre**: Pendiente
-- **Etapa 1.0 global**: ~45% completada (10 de ~22 tareas ejecutables)
+- **Bloque 3**: 10/10 tareas completadas (100%)
+- **Bloque 4**: 0/8 tareas completadas (0%) — es el bloque activo siguiente
+- **Bloque 5 + Cierre**: Pendiente
+- **Etapa 1.0 global**: ~73% completada (20 de ~27 tareas ejecutables)
 
 ---
 
 ## §3 Inventario Tecnico de Cambios
 
-### Archivos Creados en Esta Sesion (Bloque 2)
+### Archivos Creados en Esta Sesion (Bloque 3)
 
-| Archivo                                    | Tipo    | Descripcion                                                              |
-| :----------------------------------------- | :------ | :----------------------------------------------------------------------- |
-| `conftest.py` (raiz)                       | Nuevo   | Inserta raiz del proyecto en `sys.path` para imports correctos en pytest |
-| `engine/src/models.py`                     | Nuevo   | Modelos Pydantic: `CheckStatus`, `ServiceResult`, `RunReport`, `validate_env_vars` |
-| `engine/src/sanitizer.py`                  | Nuevo   | Funcion `sanitize_service_result` para redaccion segura de campos sensibles |
-| `engine/src/check_env.py`                  | Nuevo   | Orquestador completo: `CRITICAL_SERVICES`, `WARNING_SERVICES`, stubs y `main()` |
-| `engine/tests/test_models.py`              | Nuevo   | 15 tests RED -> GREEN de modelos Pydantic                                |
-| `engine/tests/test_sanitizer.py`           | Nuevo   | 10 tests de sanitizacion de resultados                                   |
-| `engine/tests/test_orchestrator.py`        | Nuevo   | 12 tests de logica de orquestacion (defecto estructural en L235 corregido) |
-| `engine/tests/test_orchestrator_output.py` | Nuevo   | 6 tests de formato de salida para GitHub Step Summary                    |
+| Archivo                                        | Tipo    | Descripcion                                                              |
+| :--------------------------------------------- | :------ | :----------------------------------------------------------------------- |
+| `engine/tests/test_github_handshake.py`        | Nuevo   | 8 tests RED -> GREEN para `check_github` (scopes, 401/403, latencia, endpoint, headers) |
+| `engine/tests/test_resend_handshake.py`        | Nuevo   | 8 tests RED -> GREEN para `check_resend` (200/401/403/5xx, latencia, endpoint, headers) |
+| `engine/tests/test_upstash_handshake.py`       | Nuevo   | 8 tests RED -> GREEN para `check_upstash` (PONG, 401/403, body inesperado, latencia, endpoint, headers) |
+| `engine/tests/test_supabase_handshake.py`      | Nuevo   | 12 tests RED -> GREEN para `check_supabase_http` (7) y `check_supabase_sql` (5) |
 
-### Archivos Modificados en Esta Sesion (Bloque 2)
+### Archivos Modificados en Esta Sesion (Bloque 3)
 
-| Archivo                             | Tipo        | Descripcion                                                         |
-| :---------------------------------- | :---------- | :------------------------------------------------------------------ |
-| `engine/tests/conftest.py`          | Actualizado | Fixtures compartidas ampliadas: `ok_result`, `error_result`, `warning_result` |
-| `docs/f1_1.0/f1_1.0_task.md`       | Actualizado | Bloque 2 marcado completo [x] para TSK-04 a TSK-09                 |
+| Archivo                             | Tipo        | Descripcion                                                                         |
+| :---------------------------------- | :---------- | :---------------------------------------------------------------------------------- |
+| `engine/src/check_env.py`           | Modificado  | Implementacion real de los 5 handshakes (GitHub, Resend, Upstash, Supabase HTTP/SQL); imports `time`, `httpx`, `psycopg2`, `sanitize_log_message`; nueva funcion `_sanitize_checks`; correcciones DEF-01 (latency bug), DEF-02 (sanitizacion invocada), OB-01 (guardia HTTP) |
+| `docs/f1_1.0/f1_1.0_task.md`       | Actualizado | Bloque 3 marcado completo [x] para TSK-10.1 a TSK-12.2                            |
 
-### Archivos del Bloque 1 (referencia historica, sin cambios en esta sesion)
+### Archivos de Bloques Anteriores (referencia historica, sin cambios en esta sesion)
 
-| Archivo                        | Tipo    | Descripcion                                                   |
-| :----------------------------- | :------ | :------------------------------------------------------------ |
-| `engine/src/__init__.py`       | Prev.   | Marca el directorio `src/` como paquete Python reconocible    |
-| `engine/tests/__init__.py`     | Prev.   | Marca el directorio `tests/` como paquete Python reconocible  |
-| `engine/requirements.in`       | Prev.   | Dependencias directas (fuente para `pip-compile`)             |
-| `engine/requirements.txt`      | Prev.   | Manifiesto de dependencias con hashes SHA256 (13 paquetes)    |
-| `engine/.venv/`                | Prev.   | Entorno virtual Python 3.12 aislado                           |
-| `engine/src/utils.py`          | Prev.   | Modulo de utilidades de infraestructura (TSK-F1_1.0-03)       |
+| Archivo                                    | Origen  | Estado        |
+| :----------------------------------------- | :------ | :------------ |
+| `engine/src/utils.py`                      | B1      | Sin cambios   |
+| `engine/src/models.py`                     | B2      | Sin cambios   |
+| `engine/src/sanitizer.py`                  | B2      | Sin cambios (Capa 2 — pendiente de integracion en §4) |
+| `engine/tests/conftest.py`                 | B2      | Sin cambios   |
+| `engine/tests/test_models.py`              | B2      | Sin cambios   |
+| `engine/tests/test_sanitizer.py`           | B2      | Sin cambios   |
+| `engine/tests/test_orchestrator.py`        | B2      | Sin cambios   |
+| `engine/tests/test_orchestrator_output.py` | B2      | Sin cambios   |
 
 ---
 
@@ -106,8 +124,8 @@ engine/
     __init__.py          (creado B1)
     utils.py             (creado B1 — TSK-03 DONE)
     models.py            (creado B2 — TSK-05 DONE)
-    sanitizer.py         (creado B2 — TSK-06 DONE)
-    check_env.py         (creado B2 — TSK-08 DONE)
+    sanitizer.py         (creado B2 — TSK-06 DONE — Capa 2 pendiente de integracion)
+    check_env.py         (modificado B3 — handshakes implementados, sanitizacion activa)
   tests/
     __init__.py          (creado B1)
     conftest.py          (actualizado B2 — fixtures expandidas)
@@ -115,51 +133,57 @@ engine/
     test_sanitizer.py    (creado B2 — 10 tests GREEN)
     test_orchestrator.py (creado B2 — 12 tests GREEN)
     test_orchestrator_output.py (creado B2 — 6 tests GREEN)
-  requirements.in        (creado B1)
+    test_github_handshake.py    (creado B3 — 8 tests GREEN)
+    test_resend_handshake.py    (creado B3 — 8 tests GREEN)
+    test_upstash_handshake.py   (creado B3 — 8 tests GREEN)
+    test_supabase_handshake.py  (creado B3 — 12 tests GREEN)
   requirements.txt       (creado B1 — hashes SHA256)
   .venv/                 (creado B1 — entorno aislado)
 conftest.py              (creado B2 — raiz del proyecto, sys.path fix)
 
 docs/f1_1.0/
-  f1_1.0_task.md         (actualizado — B1+B2 completos, B3 pendiente)
+  f1_1.0_task.md         (actualizado — B1+B2+B3 completos, B4 pendiente)
 ```
 
-### Observaciones Tecnicas Pendientes (emitidas por backend-reviewer en TSK-09-CERT)
+### Observaciones Tecnicas Pendientes (emitidas por auditores en B2 y B3)
 
-Estas observaciones NO son bloqueadores del Bloque 3. Son deudas tecnicas a resolver en TSK-19.1-REFACTOR:
+Estas observaciones NO son bloqueadores del Bloque 4. Son deudas tecnicas a resolver en TSK-19.1-REFACTOR o en el contexto del Bloque 4:
 
-| ID     | Descripcion                                                                          | Resolucion Objetivo  |
-| :----- | :----------------------------------------------------------------------------------- | :------------------- |
-| OBS-01 | Patron check+log repetido en `main()` — candidato a helper privado                  | TSK-19.1-REFACTOR    |
-| OBS-02 | `RunReport.run_id` acepta UUID de cualquier version — necesita `@field_validator`    | TSK-19.1-REFACTOR    |
-| OBS-03 | `sanitize_service_result` no redacta campo `metadata` — riesgo de fuga de secretos  | TSK-11.x (Bloque 3+) |
-| OBS-04 | `_write_github_step_summary` escribe `message` sin sanitizar — aplicar sanitizacion  | TSK-11.x (Bloque 3+) |
-| OBS-05 | Codigo muerto `capturing_main` en `test_orchestrator.py` — eliminar                  | TSK-19.1-REFACTOR    |
-| OBS-06 | `latency_ms=0.1` sentinel en stubs — medir latencia real en handshakes               | TSK-11.x (Bloque 3+) |
+| ID      | Origen     | Descripcion                                                                               | Resolucion Objetivo  |
+| :------ | :--------- | :---------------------------------------------------------------------------------------- | :------------------- |
+| OBS-01  | B2 CERT    | Patron check+log repetido en `main()` — candidato a helper privado                       | TSK-19.1-REFACTOR    |
+| OBS-02  | B2 CERT    | `RunReport.run_id` acepta UUID de cualquier version — necesita `@field_validator`         | TSK-19.1-REFACTOR    |
+| OBS-03  | B2 CERT    | `sanitize_service_result` no redacta campo `metadata` — riesgo de fuga de secretos       | TSK-19.1-REFACTOR    |
+| OBS-04  | B2 CERT    | Codigo muerto `capturing_main` en `test_orchestrator.py` — eliminar                      | TSK-19.1-REFACTOR    |
+| H-1     | B3 SEC     | `sanitize_service_result` (Capa 2, regex headers de `sanitizer.py`) no invocada desde `_sanitize_checks` | TSK-19.1-REFACTOR |
+| H-2     | B3 SEC     | `psycopg2.connect` sin `connect_timeout` — bloqueo indefinido posible; DSN reformateada puede evadir sanitizacion de cadena exacta | B4 o TSK-19.1-REFACTOR |
+| OBS-B3  | B3 CERT    | Patron retry/backoff duplicado en 4 funciones HTTP — deuda de diseno para refactoring    | TSK-19.1-REFACTOR    |
 
 ### Bloqueadores Criticos
 
-Ninguno activo. El Bloque 2 esta 100% completado con 43 tests passing y certificacion APROBADA del backend-reviewer.
+Ninguno activo. El Bloque 3 esta 100% completado con 79 tests passing, certificacion APROBADA del backend-reviewer y SEC-TOKEN APROBADO del security-hardener.
 
 ### Proximo Paso Prioritario (Next Step Atomico)
 
-**Tarea**: `TSK-F1_1.0-10.1-RED` (Bloque 3 — Fase RED del ciclo TDD para handshake GitHub)
+**Tarea**: `TSK-F1_1.0-13-RED` (Bloque 4 — Fase RED del ciclo TDD para validacion SQL, extensiones y DDL)
 **Agente Responsable**: `backend-tester`
 **Accion Concreta**:
 
-Invocar al agente `backend-tester` con el skill `python-test` para crear el archivo `engine/tests/test_handshakes.py`. El archivo debe contener tests unitarios **fallidos** que validen el handshake de GitHub API usando mocks de `httpx`. Los escenarios obligatorios son:
+Invocar al agente `backend-tester` para crear `engine/tests/test_database.py` con tests unitarios **fallidos** que validen:
 
-1. Token valido con scopes `workflow, repo` — debe retornar `CheckStatus.OK`
-2. Respuesta 401 (token invalido) — debe retornar `CheckStatus.ERROR` con mensaje especifico
-3. Respuesta 403 (token sin scopes suficientes) — debe retornar `CheckStatus.ERROR` con detalle de scopes
-4. Timeout de red — debe retornar `CheckStatus.ERROR` con mensaje de timeout
+1. **Handshake SQL via psycopg2** (`check_supabase_sql` — ya implementado): tests de conectividad directa con `SELECT 1`, manejo de `OperationalError`, limpieza de conexion en `finally`.
+2. **Auditoria de Extensiones** (`check_pg_extensions` — por implementar): verificacion de que `pg_cron`, `uuid-ossp` y `pg_net` estan instaladas consultando `pg_extension`.
+3. **Limpieza de Zombies** (`check_startup_cleanup` — por implementar): busqueda y borrado de tablas huerfanas `public._bootstrap_*` de corridas anteriores interrumpidas.
+4. **Sonda DDL** (`check_ddl_privileges` — por implementar): verificacion de permisos `CREATE` en esquema `public` via `has_schema_privilege`.
+5. **Test de Persistencia Forense** (`check_persistence_cycle` — por implementar): ciclo `CREATE TABLE _bootstrap_[run_id_short] -> INSERT -> SELECT count(*) -> DROP TABLE` en bloque `try/finally`.
 
-El criterio de exito de la fase RED es que `pytest engine/tests/test_handshakes.py` confirme que los tests **FALLAN** porque la implementacion del handshake en `check_env.py` aun no existe (los servicios usan stubs).
+Los tests deben fallar porque las funciones `check_pg_extensions`, `check_startup_cleanup`, `check_ddl_privileges` y `check_persistence_cycle` no existen todavia en `check_env.py`. El criterio de exito de la fase RED es que `pytest engine/tests/test_database.py` confirme fallo por `ImportError` o `AttributeError` en las funciones aun no implementadas.
 
-**Comando de activacion sugerido**:
-```
-/python-test TSK-F1_1.0-10.1-RED
-```
+**Contexto adicional para el agente**:
+- Usar `unittest.mock.patch("psycopg2.connect", ...)` para todos los tests SQL
+- El helper `_make_psycopg2_mock()` ya existe en `engine/tests/test_supabase_handshake.py` — reutilizar el patron
+- El `run_id_short` para nombres de tabla viene de `engine.src.utils.run_id_short`
+- La SPEC §3.3 describe el contrato completo de cada funcion (leer antes de escribir tests)
 
 ---
 
@@ -205,3 +229,27 @@ El criterio de exito de la fase RED es que `pytest engine/tests/test_handshakes.
 5. **Defecto estructural en `test_orchestrator.py` L235 corregido durante TSK-07-RED**: Durante la fase RED del Bloque 2 se detecto un error de estructura en el test de orquestacion que hacia pasar el test por razones incorrectas. Se corrigio antes de proceder a la fase GREEN, preservando la integridad del ciclo TDD.
 
 6. **Stubs con `latency_ms=0.1` como sentinel explicito**: Los stubs del Bloque 2 usan `latency_ms=0.1` como valor centinela que indica "latencia simulada, no real". El Bloque 3 reemplazara estos stubs con implementaciones reales que midan latencia via `httpx` y `psycopg2`. OBS-06 documenta este contrato para el implementador del Bloque 3.
+
+---
+
+### [2026-04-07] — Cierre Bloque 3 (Handshaking de APIs Externas — TDD Cycle)
+
+**Contexto**: Tercera sesion de desarrollo activo de la Fase 1, Etapa 1.0. El Bloque 3 completo fue ejecutado en una sola sesion: 4 fases RED (36 tests), 4 fases GREEN (5 funciones implementadas), 1 CERT de calidad + correcciones, 1 CERT de seguridad. Suite total: 79 passed, 0 failed.
+
+**Decisiones Tomadas**:
+
+1. **Una suite de tests por servicio externo (no un archivo monolitico)**: A diferencia de lo que anticipaba el handoff anterior (un solo `test_handshakes.py`), se decidio crear un archivo de tests por servicio: `test_github_handshake.py`, `test_resend_handshake.py`, `test_upstash_handshake.py`, `test_supabase_handshake.py`. Esta granularidad facilita la localizacion de fallos en CI/CD y reduce el acoplamiento entre suites de servicios independientes.
+
+2. **Mock de `httpx.get` a nivel de modulo, no de funcion**: Los tests parchean `httpx.get` directamente (`patch("httpx.get", ...)`) en lugar de parchear `engine.src.check_env.httpx.get`. Esto es posible porque `httpx` se importa a nivel de modulo y es mas robusto ante refactorizaciones internas de `check_env.py`.
+
+3. **`latency_ms = max((end - start) * 1000, 0.001)`**: El minimo garantizado de `0.001 ms` resuelve la restriccion `gt=0` del modelo `ServiceResult` incluso cuando los mocks de `httpx` son instantaneos (latencia medida de 0µs). Este patron debe replicarse en todos los checks del Bloque 4.
+
+4. **`_sanitize_checks` invocada antes de `_compute_global_status`**: La sanitizacion de mensajes de error ocurre antes de construir el `RunReport`, garantizando que ninguna superficie de salida (stdout, GITHUB_STEP_SUMMARY) reciba mensajes crudos con credenciales. El orden es: `checks completos -> _sanitize_checks -> _compute_global_status -> RunReport -> stdout -> GHA`.
+
+5. **Correccion DEF-01 — `start` capturado antes del loop en `check_supabase_sql`**: El bug original calculaba `end_err - end_err = 0.0` en el path de error. La correccion mueve `start = time.monotonic()` fuera del loop `for`, calculando correctamente la latencia total acumulada de todos los reintentos fallidos.
+
+6. **Correccion DEF-02 — Sanitizacion activada en `main()`**: `sanitize_log_message` existia en `utils.py` y `sanitize_service_result` en `sanitizer.py`, pero ninguna era invocada desde el flujo principal. La correccion agrego `_sanitize_checks` llamada desde `main()` con la lista de `_SECRET_ENV_KEYS`. La Capa 2 (`sanitizer.py` con regex de headers) permanece como deuda tecnica H-1 para TSK-19.1-REFACTOR.
+
+7. **`psycopg2.connect(db_url)` con argumento posicional**: El test `test_check_supabase_sql_calls_psycopg2_connect` inspeccionaba `call_args.args[0]`. La implementacion usa `psycopg2.connect(db_url)` (posicional, no keyword) para satisfacer este contrato. Esta decision debe mantenerse al extender la funcion con `connect_timeout` en el Bloque 4 (pasarlo como keyword: `psycopg2.connect(db_url, connect_timeout=10)`).
+
+8. **Recomendacion de seguridad H-2 diferida al Bloque 4**: El security-hardener recomendo agregar `connect_timeout=10` a `psycopg2.connect` para evitar bloqueos indefinidos. Esta correccion se difiere al Bloque 4 (TSK-F1_1.0-14.1-GREEN) donde el `db-manager` ya tendra contexto completo sobre el patron de conexion SQL definitivo.
