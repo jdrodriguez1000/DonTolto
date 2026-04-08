@@ -1,0 +1,76 @@
+# =============================================================================
+# Workflow: f1_1.0 — Validacion de Entorno
+# Trazabilidad: TSK-F1_1.0-17.1-IMPL / docs/f1_1.0/f1_1.0_task.md
+#
+# Proposito: Verificar que todos los servicios externos (Supabase, Upstash,
+# Resend, GitHub) esten operativos y que el entorno de ejecucion cumpla los
+# contratos definidos en la etapa f1_1.0.
+#
+# Disparadores:
+#   - Manual (workflow_dispatch): Ejecucion bajo demanda desde la UI de GHA.
+#   - Programado (schedule): Martes/Jueves/Domingo a la 1:30 AM COT (6:30 UTC).
+#
+# Seguridad:
+#   - Permisos minimos (contents: read).
+#   - Secretos inyectados exclusivamente via bloque env: del step.
+#   - Ningun secreto se expone en comandos run:.
+#   - Dependencias instaladas con verificacion de hashes (--require-hashes).
+# =============================================================================
+
+name: "f1_1.0 — Validacion de Entorno"
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 1:30 AM COT = 6:30 AM UTC | Martes(2), Jueves(4), Domingo(0)
+    - cron: '30 6 * * 2,4,0'
+
+jobs:
+  env-validation:
+    name: "Validacion de Entorno DonTolto"
+    runs-on: ubuntu-latest
+
+    # Principio de minimo privilegio: solo lectura del repositorio
+    permissions:
+      contents: read
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Paso 1: Obtener el codigo fuente del repositorio
+      # -----------------------------------------------------------------------
+      - name: "Checkout codigo"
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Paso 2: Configurar el interprete de Python en la version requerida
+      # -----------------------------------------------------------------------
+      - name: "Setup Python 3.12"
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # -----------------------------------------------------------------------
+      # Paso 3: Instalar dependencias con verificacion de integridad por hashes
+      # Garantiza reproducibilidad absoluta (Zero Drift) entre entornos.
+      # -----------------------------------------------------------------------
+      - name: "Instalar dependencias (hashes verificados)"
+        run: pip install --require-hashes -r engine/requirements.txt
+
+      # -----------------------------------------------------------------------
+      # Paso 4: Ejecutar el orquestador de validacion de entorno.
+      # El script retorna exit code 1 automaticamente si algun servicio critico
+      # falla, propagando el fallo al workflow sin logica adicional.
+      # Secretos inyectados via env: — nunca referenciados en run:.
+      # -----------------------------------------------------------------------
+      - name: "Ejecutar validacion de entorno"
+        id: run_validation
+        run: python -m engine.src.check_env
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          POSTGRES_DB_URL: ${{ secrets.POSTGRES_DB_URL }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ADMIN_UUID: ${{ secrets.ADMIN_UUID }}

@@ -14,8 +14,10 @@ docs/f1_1.0/f1_1.0_spec.md §1, §2.1, §3.2.2, §6 / T-05b, T-05c
 """
 
 import os
+import re
 import sys
 import time
+from pathlib import Path
 from typing import Final
 
 import httpx
@@ -24,6 +26,25 @@ from psycopg2 import sql as pg_sql
 
 from engine.src.models import CheckStatus, RunReport, ServiceResult, validate_env_vars
 from engine.src.utils import format_log_entry, generate_run_id, get_timestamp, run_id_short, sanitize_log_message
+
+# ---------------------------------------------------------------------------
+# Constantes HTTP compartidas por todos los checks de servicio externo
+# ---------------------------------------------------------------------------
+
+_HTTP_MAX_RETRIES: Final[int] = 3
+_HTTP_TIMEOUT_SECONDS: Final[float] = 10.0
+
+# ---------------------------------------------------------------------------
+# Dependencias directas del proyecto para el Environment Snapshot (T-12b)
+# Definida a nivel de modulo para reutilizacion y evitar redeclaracion local.
+# ---------------------------------------------------------------------------
+
+_DIRECT_DEPS: Final[list[str]] = [
+    "httpx",
+    "psycopg2-binary",
+    "python-dotenv",
+    "pydantic",
+]
 
 # ---------------------------------------------------------------------------
 # Mapeo de criticidad de servicios
@@ -38,6 +59,51 @@ CRITICAL_SERVICES: Final[frozenset[str]] = frozenset(
 WARNING_SERVICES: Final[frozenset[str]] = frozenset(
     {"github", "resend", "upstash", "pg_extensions", "zombie_cleanup", "ddl_capabilities", "persistence_cycle"}
 )
+
+
+# ---------------------------------------------------------------------------
+# Helper HTTP privado — implementa retry con backoff exponencial
+# ---------------------------------------------------------------------------
+
+
+def _http_get_with_retry(
+    url: str,
+    headers: dict[str, str],
+    timeout: float = _HTTP_TIMEOUT_SECONDS,
+    max_retries: int = _HTTP_MAX_RETRIES,
+) -> tuple[httpx.Response | None, float, Exception | None]:
+    """Ejecuta un GET HTTP con reintentos y backoff exponencial.
+
+    Args:
+        url: URL del endpoint a consultar.
+        headers: Cabeceras HTTP a incluir en la peticion.
+        timeout: Tiempo maximo de espera por intento en segundos.
+        max_retries: Numero maximo de intentos ante errores de red/timeout.
+
+    Returns:
+        Tupla (response, latency_ms, last_exc):
+        - response: objeto httpx.Response si la peticion fue exitosa, None si todos
+          los intentos fallaron por timeout o error de red.
+        - latency_ms: latencia medida en el ultimo intento exitoso, o 0.0 si fallo.
+        - last_exc: ultima excepcion capturada, o None si hubo respuesta exitosa.
+    """
+    last_exc: Exception | None = None
+
+    for attempt in range(max_retries):
+        try:
+            start: float = time.monotonic()
+            response = httpx.get(url, headers=headers, timeout=timeout)
+            end: float = time.monotonic()
+            # Garantizar minimo de 0.001 ms para satisfacer la restriccion
+            # gt=0 del modelo ServiceResult incluso con mocks instantaneos.
+            latency_ms: float = max((end - start) * 1000, 0.001)
+            return response, latency_ms, None
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            last_exc = exc
+            if attempt < max_retries - 1:
+                time.sleep(2**attempt)
+
+    return None, 0.0, last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -67,69 +133,54 @@ def check_github(token: str) -> ServiceResult:
     """
     _ENDPOINT: str = "https://api.github.com/user"
     _REQUIRED_SCOPES: frozenset[str] = frozenset({"repo", "workflow"})
-    _TIMEOUT_SECONDS: float = 10.0
-    _MAX_RETRIES: int = 3
 
     headers: dict[str, str] = {"Authorization": f"Bearer {token}"}
-    last_exc: Exception | None = None
+    response, latency_ms, last_exc = _http_get_with_retry(_ENDPOINT, headers)
 
-    for attempt in range(_MAX_RETRIES):
-        try:
-            start: float = time.monotonic()
-            response = httpx.get(_ENDPOINT, headers=headers, timeout=_TIMEOUT_SECONDS)
-            end: float = time.monotonic()
-            # Garantizar minimo de 0.001 ms para satisfacer la restriccion
-            # gt=0 del modelo ServiceResult incluso con mocks instantaneos.
-            latency_ms: float = max((end - start) * 1000, 0.001)
+    if response is None:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=0.001,
+            message=str(last_exc),
+        )
 
-            if response.status_code == 401:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="401 Unauthorized",
-                )
+    if response.status_code == 401:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="401 Unauthorized",
+        )
 
-            if response.status_code == 403:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="403 Forbidden",
-                )
+    if response.status_code == 403:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="403 Forbidden",
+        )
 
-            if response.status_code == 200:
-                raw_scopes: str = response.headers.get("X-OAuth-Scopes", "")
-                present_scopes: set[str] = {s.strip() for s in raw_scopes.split(",") if s.strip()}
-                missing: list[str] = sorted(_REQUIRED_SCOPES - present_scopes)
+    if response.status_code == 200:
+        raw_scopes: str = response.headers.get("X-OAuth-Scopes", "")
+        present_scopes: set[str] = {s.strip() for s in raw_scopes.split(",") if s.strip()}
+        missing: list[str] = sorted(_REQUIRED_SCOPES - present_scopes)
 
-                if missing:
-                    return ServiceResult(
-                        status=CheckStatus.WARNING,
-                        latency_ms=latency_ms,
-                        message=f"missing scopes: {', '.join(missing)}",
-                    )
-
-                return ServiceResult(
-                    status=CheckStatus.OK,
-                    latency_ms=latency_ms,
-                    message=None,
-                )
-
-            # Guardia: cualquier otro codigo HTTP no mapeado (ej: 5xx)
+        if missing:
             return ServiceResult(
-                status=CheckStatus.ERROR,
+                status=CheckStatus.WARNING,
                 latency_ms=latency_ms,
-                message=f"HTTP {response.status_code}",
+                message=f"missing scopes: {', '.join(missing)}",
             )
 
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            last_exc = exc
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(2**attempt)
+        return ServiceResult(
+            status=CheckStatus.OK,
+            latency_ms=latency_ms,
+            message=None,
+        )
 
+    # Guardia: cualquier otro codigo HTTP no mapeado (ej: 5xx)
     return ServiceResult(
         status=CheckStatus.ERROR,
-        latency_ms=0.0,
-        message=str(last_exc),
+        latency_ms=latency_ms,
+        message=f"HTTP {response.status_code}",
     )
 
 
@@ -153,58 +204,43 @@ def check_resend(api_key: str) -> ServiceResult:
     Trazabilidad: TSK-F1_1.0-11.2-GREEN / SPEC §2.2
     """
     _ENDPOINT: str = "https://api.resend.com/api-keys"
-    _TIMEOUT_SECONDS: float = 10.0
-    _MAX_RETRIES: int = 3
 
     headers: dict[str, str] = {"Authorization": f"Bearer {api_key}"}
-    last_exc: Exception | None = None
+    response, latency_ms, last_exc = _http_get_with_retry(_ENDPOINT, headers)
 
-    for attempt in range(_MAX_RETRIES):
-        try:
-            start: float = time.monotonic()
-            response = httpx.get(_ENDPOINT, headers=headers, timeout=_TIMEOUT_SECONDS)
-            end: float = time.monotonic()
-            # Garantizar minimo de 0.001 ms para satisfacer la restriccion
-            # gt=0 del modelo ServiceResult incluso con mocks instantaneos.
-            latency_ms: float = max((end - start) * 1000, 0.001)
+    if response is None:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=0.001,
+            message=str(last_exc),
+        )
 
-            if response.status_code == 401:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="401 Unauthorized",
-                )
+    if response.status_code == 401:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="401 Unauthorized",
+        )
 
-            if response.status_code == 403:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="403 Forbidden",
-                )
+    if response.status_code == 403:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="403 Forbidden",
+        )
 
-            if response.status_code == 200:
-                return ServiceResult(
-                    status=CheckStatus.OK,
-                    latency_ms=latency_ms,
-                    message=None,
-                )
+    if response.status_code == 200:
+        return ServiceResult(
+            status=CheckStatus.OK,
+            latency_ms=latency_ms,
+            message=None,
+        )
 
-            # Cualquier otro codigo HTTP de error (4xx/5xx distinto a los anteriores)
-            return ServiceResult(
-                status=CheckStatus.ERROR,
-                latency_ms=latency_ms,
-                message=f"HTTP {response.status_code}",
-            )
-
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            last_exc = exc
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(2**attempt)
-
+    # Cualquier otro codigo HTTP de error (4xx/5xx distinto a los anteriores)
     return ServiceResult(
         status=CheckStatus.ERROR,
-        latency_ms=0.0,
-        message=str(last_exc),
+        latency_ms=latency_ms,
+        message=f"HTTP {response.status_code}",
     )
 
 
@@ -227,58 +263,49 @@ def check_upstash(url: str, token: str) -> ServiceResult:
     Trazabilidad: TSK-F1_1.0-11.3-GREEN / SPEC §2.2
     """
     _ENDPOINT: str = f"{url}/ping"
-    _TIMEOUT_SECONDS: float = 10.0
-    _MAX_RETRIES: int = 3
 
     headers: dict[str, str] = {"Authorization": f"Bearer {token}"}
-    last_exc: Exception | None = None
+    response, latency_ms, last_exc = _http_get_with_retry(_ENDPOINT, headers)
 
-    for attempt in range(_MAX_RETRIES):
-        try:
-            start: float = time.monotonic()
-            response = httpx.get(_ENDPOINT, headers=headers, timeout=_TIMEOUT_SECONDS)
-            end: float = time.monotonic()
-            # Garantizar minimo de 0.001 ms para satisfacer la restriccion
-            # gt=0 del modelo ServiceResult incluso con mocks instantaneos.
-            latency_ms: float = max((end - start) * 1000, 0.001)
+    if response is None:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=0.001,
+            message=str(last_exc),
+        )
 
-            if response.status_code == 401:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="401 Unauthorized",
-                )
+    if response.status_code == 401:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="401 Unauthorized",
+        )
 
-            if response.status_code == 403:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="403 Forbidden",
-                )
+    if response.status_code == 403:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="403 Forbidden",
+        )
 
-            if response.status_code == 200:
-                body: dict = response.json()
-                if body == {"result": "PONG"}:
-                    return ServiceResult(
-                        status=CheckStatus.OK,
-                        latency_ms=latency_ms,
-                        message=None,
-                    )
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message=f"unexpected response: {body}",
-                )
-
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            last_exc = exc
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(2**attempt)
+    if response.status_code == 200:
+        body: dict = response.json()
+        if body == {"result": "PONG"}:
+            return ServiceResult(
+                status=CheckStatus.OK,
+                latency_ms=latency_ms,
+                message=None,
+            )
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message=f"unexpected response: {body}",
+        )
 
     return ServiceResult(
         status=CheckStatus.ERROR,
-        latency_ms=0.0,
-        message=str(last_exc),
+        latency_ms=latency_ms,
+        message=f"HTTP {response.status_code}",
     )
 
 
@@ -302,58 +329,45 @@ def check_supabase_http(url: str, key: str) -> ServiceResult:
     Trazabilidad: TSK-F1_1.0-11.4-GREEN / SPEC §2.2
     """
     _ENDPOINT: str = f"{url}/rest/v1/"
-    _TIMEOUT_SECONDS: float = 10.0
-    _MAX_RETRIES: int = 3
 
     headers: dict[str, str] = {
         "apikey": key,
         "Authorization": f"Bearer {key}",
     }
-    last_exc: Exception | None = None
+    response, latency_ms, last_exc = _http_get_with_retry(_ENDPOINT, headers)
 
-    for attempt in range(_MAX_RETRIES):
-        try:
-            start: float = time.monotonic()
-            response = httpx.get(_ENDPOINT, headers=headers, timeout=_TIMEOUT_SECONDS)
-            end: float = time.monotonic()
-            latency_ms: float = max((end - start) * 1000, 0.001)
+    if response is None:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=0.001,
+            message=str(last_exc),
+        )
 
-            if response.status_code == 401:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="401 Unauthorized",
-                )
+    if response.status_code == 401:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="401 Unauthorized",
+        )
 
-            if response.status_code == 403:
-                return ServiceResult(
-                    status=CheckStatus.ERROR,
-                    latency_ms=latency_ms,
-                    message="403 Forbidden",
-                )
+    if response.status_code == 403:
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms,
+            message="403 Forbidden",
+        )
 
-            if response.status_code == 200:
-                return ServiceResult(
-                    status=CheckStatus.OK,
-                    latency_ms=latency_ms,
-                    message=None,
-                )
-
-            return ServiceResult(
-                status=CheckStatus.ERROR,
-                latency_ms=latency_ms,
-                message=f"HTTP {response.status_code}",
-            )
-
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            last_exc = exc
-            if attempt < _MAX_RETRIES - 1:
-                time.sleep(2**attempt)
+    if response.status_code == 200:
+        return ServiceResult(
+            status=CheckStatus.OK,
+            latency_ms=latency_ms,
+            message=None,
+        )
 
     return ServiceResult(
         status=CheckStatus.ERROR,
-        latency_ms=0.0,
-        message=str(last_exc),
+        latency_ms=latency_ms,
+        message=f"HTTP {response.status_code}",
     )
 
 
@@ -672,17 +686,17 @@ def check_ddl_capabilities(db_url: str) -> ServiceResult:
             conn.close()
 
 
-def check_persistence_cycle(db_url: str, run_id_short: str) -> ServiceResult:
+def check_persistence_cycle(db_url: str, table_suffix: str) -> ServiceResult:
     """Ejecuta un ciclo forense idempotente CREATE→INSERT→SELECT→DROP para validar
     los privilegios de persistencia completos del usuario de base de datos.
 
-    Crea una tabla temporal public._bootstrap_[run_id_short], inserta un registro,
+    Crea una tabla temporal public._bootstrap_[table_suffix], inserta un registro,
     verifica que el conteo sea >= 1 y elimina la tabla en el bloque finally para
     garantizar limpieza incluso ante fallos intermedios (invariante de idempotencia).
 
     Args:
         db_url: URL de conexion PostgreSQL completa (postgresql://...).
-        run_id_short: Sufijo corto del run_id activo (8 caracteres hex). Forma el
+        table_suffix: Sufijo corto del run_id activo (8 caracteres hex). Forma el
                       nombre unico de la tabla temporal del ciclo.
 
     Returns:
@@ -694,7 +708,7 @@ def check_persistence_cycle(db_url: str, run_id_short: str) -> ServiceResult:
 
     Trazabilidad: TSK-F1_1.0-15.2-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-B
     """
-    table_name: str = f"public._bootstrap_{run_id_short}"
+    table_name: str = f"public._bootstrap_{table_suffix}"
     conn = None
     start: float = time.monotonic()
 
@@ -776,6 +790,29 @@ def check_persistence_cycle(db_url: str, run_id_short: str) -> ServiceResult:
 # ---------------------------------------------------------------------------
 # Orquestador principal
 # ---------------------------------------------------------------------------
+
+
+def _run_and_log_check(
+    name: str,
+    fn: object,
+    *args: object,
+) -> ServiceResult:
+    """Ejecuta un check de servicio y emite su resultado a stderr en formato estructurado.
+
+    Args:
+        name: Clave del check (ej: 'github', 'supabase_sql').
+        fn: Callable que implementa el check y retorna un ServiceResult.
+        *args: Argumentos posicionales a pasar al callable.
+
+    Returns:
+        ServiceResult retornado por el callable.
+    """
+    result: ServiceResult = fn(*args)  # type: ignore[operator]
+    print(
+        format_log_entry("INFO", "orchestrator", f"Check '{name}': {result.status.value}"),
+        file=sys.stderr,
+    )
+    return result
 
 
 def _sanitize_checks(
@@ -905,6 +942,40 @@ def _write_github_step_summary(report: RunReport) -> None:
         detail: str = result.message or "-"
         lines.append(f"| {service} | {_format_status(result.status)} | {detail} |")
 
+    # ------------------------------------------------------------------
+    # T-12b: Environment Snapshot — version Python y hashes de deps directas
+    # Resolucion de ruta relativa al archivo para compatibilidad local/GHA.
+    # ------------------------------------------------------------------
+    dep_hashes: dict[str, str] = {dep: "N/A" for dep in _DIRECT_DEPS}
+    try:
+        req_path: Path = Path(__file__).parent.parent / "requirements.txt"
+        req_text: str = req_path.read_text(encoding="utf-8")
+        # Parsear bloque de cada dependencia directa: busca "nombre==" y extrae
+        # el primer hash sha256 del bloque de entrada.
+        for dep in _DIRECT_DEPS:
+            # Patron: linea que comienza con el nombre del paquete seguido de ==
+            pkg_pattern = re.compile(
+                rf"^{re.escape(dep)}==.*?(?=\n\S|\Z)",
+                re.MULTILINE | re.DOTALL,
+            )
+            pkg_match = pkg_pattern.search(req_text)
+            if pkg_match:
+                hash_match = re.search(r"--hash=sha256:([a-f0-9]+)", pkg_match.group(0))
+                if hash_match:
+                    full_hash: str = hash_match.group(1)
+                    dep_hashes[dep] = f"sha256:{full_hash[:16]}..."
+    except Exception:
+        # Fallback silencioso: los valores ya son "N/A"
+        pass
+
+    python_version: str = sys.version.replace("\n", " ")
+    lines.append("\n## Environment Snapshot\n")
+    lines.append("| Componente | Version / Hash |")
+    lines.append("|---|---|")
+    lines.append(f"| Python | {python_version} |")
+    for dep in _DIRECT_DEPS:
+        lines.append(f"| {dep} | {dep_hashes[dep]} |")
+
     with open(summary_path, "a", encoding="utf-8") as summary_file:
         summary_file.write("\n".join(lines) + "\n")
 
@@ -946,62 +1017,34 @@ def main(env: dict | None = None) -> RunReport:
     )
 
     # Fase 1: ejecutar TODOS los checks (Diagnostic-First)
+    # _run_and_log_check ejecuta el callable y emite el log de resultado a stderr.
     checks: dict[str, ServiceResult] = {}
 
-    checks["env_vars"] = _aggregate_env_vars_result(resolved_env)
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'env_vars': {checks['env_vars'].status.value}"),
-        file=sys.stderr,
-    )
-
-    checks["github"] = check_github(resolved_env.get("GITHUB_TOKEN", ""))
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'github': {checks['github'].status.value}"),
-        file=sys.stderr,
-    )
-
-    checks["resend"] = check_resend(resolved_env.get("RESEND_API_KEY", ""))
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'resend': {checks['resend'].status.value}"),
-        file=sys.stderr,
-    )
-
-    checks["upstash"] = check_upstash(
+    checks["env_vars"] = _run_and_log_check("env_vars", _aggregate_env_vars_result, resolved_env)
+    checks["github"] = _run_and_log_check("github", check_github, resolved_env.get("GITHUB_TOKEN", ""))
+    checks["resend"] = _run_and_log_check("resend", check_resend, resolved_env.get("RESEND_API_KEY", ""))
+    checks["upstash"] = _run_and_log_check(
+        "upstash",
+        check_upstash,
         resolved_env.get("UPSTASH_REDIS_REST_URL", ""),
         resolved_env.get("UPSTASH_REDIS_REST_TOKEN", ""),
     )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'upstash': {checks['upstash'].status.value}"),
-        file=sys.stderr,
-    )
-
-    checks["supabase_http"] = check_supabase_http(
+    checks["supabase_http"] = _run_and_log_check(
+        "supabase_http",
+        check_supabase_http,
         resolved_env.get("SUPABASE_URL", ""),
         resolved_env.get("SUPABASE_SERVICE_ROLE_KEY", ""),
     )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'supabase_http': {checks['supabase_http'].status.value}"),
-        file=sys.stderr,
-    )
-
-    checks["supabase_sql"] = check_supabase_sql(
-        resolved_env.get("POSTGRES_DB_URL", "")
-    )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'supabase_sql': {checks['supabase_sql'].status.value}"),
-        file=sys.stderr,
+    checks["supabase_sql"] = _run_and_log_check(
+        "supabase_sql", check_supabase_sql, resolved_env.get("POSTGRES_DB_URL", "")
     )
 
     # Limpieza de tablas zombie _bootstrap_* antes de cualquier auditoria de esquema.
     # Se ejecuta en el arranque para garantizar un estado limpio antes de los checks DDL.
     # Criticidad WARNING: la presencia de zombies no bloquea el entorno pero debe advertirse.
     # Trazabilidad: TSK-F1_1.0-14.3-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3 T-10b
-    checks["zombie_cleanup"] = check_zombie_cleanup(
-        resolved_env.get("POSTGRES_DB_URL", "")
-    )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'zombie_cleanup': {checks['zombie_cleanup'].status.value}"),
-        file=sys.stderr,
+    checks["zombie_cleanup"] = _run_and_log_check(
+        "zombie_cleanup", check_zombie_cleanup, resolved_env.get("POSTGRES_DB_URL", "")
     )
 
     # Sonda de capacidades DDL: verifica que el usuario de BD tiene privilegio
@@ -1009,12 +1052,8 @@ def main(env: dict | None = None) -> RunReport:
     # Criticidad WARNING: sin privilegio CREATE el entorno puede arrancar pero los
     # checks DDL posteriores advertiran o fallaran segun sus propias reglas.
     # Trazabilidad: TSK-F1_1.0-15.1-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3 T-10c
-    checks["ddl_capabilities"] = check_ddl_capabilities(
-        resolved_env.get("POSTGRES_DB_URL", "")
-    )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'ddl_capabilities': {checks['ddl_capabilities'].status.value}"),
-        file=sys.stderr,
+    checks["ddl_capabilities"] = _run_and_log_check(
+        "ddl_capabilities", check_ddl_capabilities, resolved_env.get("POSTGRES_DB_URL", "")
     )
 
     # Auditoria de extensiones PostgreSQL requeridas (pg_cron, uuid-ossp, pg_net).
@@ -1022,12 +1061,8 @@ def main(env: dict | None = None) -> RunReport:
     # Criticidad WARNING: el entorno puede operar sin estas extensiones inicialmente,
     # pero se debe advertir para garantizar la funcionalidad completa del sistema.
     # Trazabilidad: TSK-F1_1.0-14.2-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-A
-    checks["pg_extensions"] = check_pg_extensions(
-        resolved_env.get("POSTGRES_DB_URL", "")
-    )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'pg_extensions': {checks['pg_extensions'].status.value}"),
-        file=sys.stderr,
+    checks["pg_extensions"] = _run_and_log_check(
+        "pg_extensions", check_pg_extensions, resolved_env.get("POSTGRES_DB_URL", "")
     )
 
     # Ciclo forense de persistencia: valida que el usuario puede CREATE, INSERT, SELECT y DROP
@@ -1035,24 +1070,24 @@ def main(env: dict | None = None) -> RunReport:
     # Se ejecuta despues de ddl_capabilities para ejercer los privilegios ya sondeados.
     # Criticidad WARNING: un fallo indica restriccion de permisos DDL, no bloquea el arranque.
     # Trazabilidad: TSK-F1_1.0-15.2-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-B
-    checks["persistence_cycle"] = check_persistence_cycle(
+    checks["persistence_cycle"] = _run_and_log_check(
+        "persistence_cycle",
+        check_persistence_cycle,
         resolved_env.get("POSTGRES_DB_URL", ""),
         short_id,
-    )
-    print(
-        format_log_entry("INFO", "orchestrator", f"Check 'persistence_cycle': {checks['persistence_cycle'].status.value}"),
-        file=sys.stderr,
     )
 
     # Extraer secretos del entorno para sanitizar mensajes de error antes de emitir
     # cualquier reporte, previniendo fugas de credenciales en stdout y en GHA.
     # Trazabilidad: SPEC §3.2.2
     _SECRET_ENV_KEYS = (
+        "SUPABASE_URL",
         "SUPABASE_SERVICE_ROLE_KEY",
         "POSTGRES_DB_URL",
         "UPSTASH_REDIS_REST_TOKEN",
         "RESEND_API_KEY",
         "GITHUB_TOKEN",
+        "ADMIN_UUID",
     )
     secrets: list[str] = [
         resolved_env[k] for k in _SECRET_ENV_KEYS if resolved_env.get(k)
