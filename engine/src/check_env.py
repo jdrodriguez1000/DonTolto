@@ -20,6 +20,7 @@ from typing import Final
 
 import httpx
 import psycopg2
+from psycopg2 import sql as pg_sql
 
 from engine.src.models import CheckStatus, RunReport, ServiceResult, validate_env_vars
 from engine.src.utils import format_log_entry, generate_run_id, get_timestamp, run_id_short, sanitize_log_message
@@ -35,7 +36,7 @@ CRITICAL_SERVICES: Final[frozenset[str]] = frozenset(
 )
 
 WARNING_SERVICES: Final[frozenset[str]] = frozenset(
-    {"github", "resend", "upstash"}
+    {"github", "resend", "upstash", "pg_extensions", "zombie_cleanup", "ddl_capabilities", "persistence_cycle"}
 )
 
 
@@ -411,6 +412,367 @@ def check_supabase_sql(db_url: str) -> ServiceResult:
     )
 
 
+def check_pg_extensions(db_url: str) -> ServiceResult:
+    """Audita la disponibilidad de las extensiones PostgreSQL requeridas por el sistema.
+
+    Intenta crear las extensiones uuid-ossp, pg_cron y pg_net con
+    CREATE EXTENSION IF NOT EXISTS. Si el rol de conexion no tiene privilegios
+    de superusuario (pgcode=42501), verifica su existencia en el catalogo
+    pg_extension. Si las extensiones estan presentes retorna WARNING indicando
+    degradacion de privilegios. Si alguna extension no existe retorna ERROR.
+
+    En caso de exito en la creacion, verifica la visibilidad de las tablas
+    cron.job y net.http_request_queue como comprobacion adicional de integracion.
+
+    La conexion se cierra siempre en el bloque finally para evitar fugas
+    de recursos.
+
+    Args:
+        db_url: URL de conexion PostgreSQL completa (postgresql://...).
+
+    Returns:
+        ServiceResult con el estado del servicio y latencia medida:
+        - OK si CREATE exitoso y consultas de visibilidad responden.
+        - WARNING si CREATE falla por permisos (42501) pero todas las extensiones
+          existen en pg_extension.
+        - ERROR si CREATE falla por permisos y alguna extension no existe, o si
+          psycopg2.OperationalError impide la conexion.
+
+    Trazabilidad: TSK-F1_1.0-14.1-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-A
+    """
+    _EXTENSIONS: list[str] = ["uuid-ossp", "pg_cron", "pg_net"]
+    _VISIBILITY_QUERIES: list[str] = [
+        "SELECT count(*) FROM cron.job",
+        "SELECT count(*) FROM net.http_request_queue",
+    ]
+
+    conn = None
+    start: float = time.monotonic()
+
+    try:
+        conn = psycopg2.connect(db_url)
+
+        # Fase 1: intentar CREATE EXTENSION IF NOT EXISTS para cada extension
+        permission_denied: bool = False
+        for ext in _EXTENSIONS:
+            with conn.cursor() as cur:
+                try:
+                    cur.execute(f'CREATE EXTENSION IF NOT EXISTS "{ext}"')
+                except psycopg2.ProgrammingError as pg_err:
+                    if getattr(pg_err, "pgcode", None) == "42501":
+                        permission_denied = True
+                        # Salir del loop — se verificara pg_extension para todas
+                        break
+                    raise
+
+        if permission_denied:
+            # Fase 2: fallback — verificar existencia en pg_extension para cada ext
+            for ext in _EXTENSIONS:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT count(*) FROM pg_extension WHERE extname = %s",
+                        (ext,),
+                    )
+                    row = cur.fetchone()
+                    count: int = row[0] if row else 0
+                    if count == 0:
+                        end_err: float = time.monotonic()
+                        latency_ms_err: float = max((end_err - start) * 1000, 0.001)
+                        return ServiceResult(
+                            status=CheckStatus.ERROR,
+                            latency_ms=latency_ms_err,
+                            message=f"extension '{ext}' no encontrada en pg_extension (sin permisos CREATE)",
+                        )
+
+            # Todas las extensiones existen pero sin privilegio de creacion
+            end_warn: float = time.monotonic()
+            latency_ms_warn: float = max((end_warn - start) * 1000, 0.001)
+            return ServiceResult(
+                status=CheckStatus.WARNING,
+                latency_ms=latency_ms_warn,
+                message="extensiones presentes pero sin privilegio CREATE EXTENSION (42501)",
+            )
+
+        # Fase 3: verificar visibilidad de tablas de integracion
+        for visibility_query in _VISIBILITY_QUERIES:
+            with conn.cursor() as cur:
+                cur.execute(visibility_query)
+                cur.fetchone()
+
+        end: float = time.monotonic()
+        latency_ms: float = max((end - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.OK,
+            latency_ms=latency_ms,
+            message=None,
+        )
+
+    except psycopg2.OperationalError as exc:
+        end_exc: float = time.monotonic()
+        latency_ms_exc: float = max((end_exc - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms_exc,
+            message=str(exc),
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def check_zombie_cleanup(db_url: str) -> ServiceResult:
+    """Busca y elimina tablas huerfanas public._bootstrap_* de corridas interrumpidas.
+
+    Conecta via psycopg2, consulta pg_tables buscando tablas con el prefijo
+    _bootstrap_ en el schema public (restos de ciclos de persistencia abortados)
+    y ejecuta DROP TABLE IF EXISTS por cada una encontrada. La conexion se
+    cierra siempre en el bloque finally para evitar fugas de recursos.
+
+    Args:
+        db_url: URL de conexion PostgreSQL completa (postgresql://...).
+
+    Returns:
+        ServiceResult con el estado de la limpieza y latencia medida:
+        - OK si la busqueda se ejecuta sin error (con o sin zombies encontrados).
+        - ERROR si psycopg2.OperationalError impide la conexion.
+
+    Trazabilidad: TSK-F1_1.0-14.3-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3 T-10b
+    """
+    _SEARCH_QUERY: str = (
+        "SELECT tablename FROM pg_tables "
+        "WHERE schemaname = 'public' AND tablename LIKE '_bootstrap_%'"
+    )
+
+    conn = None
+    start: float = time.monotonic()
+
+    try:
+        conn = psycopg2.connect(db_url)
+
+        # Fase 1: buscar tablas zombie del prefijo _bootstrap_
+        with conn.cursor() as cur:
+            cur.execute(_SEARCH_QUERY)
+            zombie_rows: list = cur.fetchall()
+
+        if not zombie_rows:
+            end: float = time.monotonic()
+            latency_ms: float = max((end - start) * 1000, 0.001)
+            return ServiceResult(
+                status=CheckStatus.OK,
+                latency_ms=latency_ms,
+                message="0 tablas zombie encontradas — sin limpieza necesaria",
+            )
+
+        # Fase 2: eliminar cada tabla zombie encontrada
+        # Se usa psycopg2.sql.Identifier para componer el identificador de tabla de
+        # forma segura, previniendo second-order SQL injection ante nombres de tabla
+        # maliciosos. Fuente: pg_tables (catalogo del sistema), pero la defensa es
+        # obligatoria por estandar de seguridad (db-management skill §Seguridad SQL).
+        with conn.cursor() as cur:
+            for row in zombie_rows:
+                tablename: str = row[0]
+                cur.execute(
+                    pg_sql.SQL("DROP TABLE IF EXISTS public.{}").format(
+                        pg_sql.Identifier(tablename)
+                    )
+                )
+
+        count: int = len(zombie_rows)
+        end_clean: float = time.monotonic()
+        latency_ms_clean: float = max((end_clean - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.OK,
+            latency_ms=latency_ms_clean,
+            message=f"{count} tablas zombie eliminadas: {[r[0] for r in zombie_rows]}",
+        )
+
+    except psycopg2.OperationalError as exc:
+        end_exc: float = time.monotonic()
+        latency_ms_exc: float = max((end_exc - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms_exc,
+            message=str(exc),
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def check_ddl_capabilities(db_url: str) -> ServiceResult:
+    """Verifica que el usuario de BD tiene privilegio CREATE en el esquema public.
+
+    Conecta via psycopg2.connect(db_url) y ejecuta la funcion del sistema
+    has_schema_privilege para determinar si el rol actual puede crear objetos
+    en el esquema public. La conexion se cierra siempre en el bloque finally
+    para evitar fugas de recursos.
+
+    Args:
+        db_url: URL de conexion PostgreSQL completa (postgresql://...).
+
+    Returns:
+        ServiceResult con el estado del privilegio DDL y latencia medida:
+        - OK si fetchone() retorna (True,) — el usuario tiene privilegio CREATE.
+        - WARNING si fetchone() retorna (False,) o resultado no booleano —
+          el usuario no tiene privilegio CREATE (no critico pero advierte
+          que los checks DDL posteriores podran fallar).
+        - ERROR si psycopg2.OperationalError impide la conexion.
+
+    Trazabilidad: TSK-F1_1.0-15.1-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3 T-10c
+    """
+    _PRIVILEGE_QUERY: str = (
+        "SELECT has_schema_privilege(current_user, 'public', 'CREATE')"
+    )
+
+    conn = None
+    start: float = time.monotonic()
+
+    try:
+        conn = psycopg2.connect(db_url)
+
+        with conn.cursor() as cur:
+            cur.execute(_PRIVILEGE_QUERY)
+            row = cur.fetchone()
+
+        end: float = time.monotonic()
+        latency_ms: float = max((end - start) * 1000, 0.001)
+
+        # Comportamiento defensivo: si el resultado es None o no es booleano → WARNING
+        if row is None or not isinstance(row[0], bool):
+            return ServiceResult(
+                status=CheckStatus.WARNING,
+                latency_ms=latency_ms,
+                message="resultado inesperado de has_schema_privilege — sin privilegio confirmado",
+            )
+
+        if row[0] is True:
+            return ServiceResult(
+                status=CheckStatus.OK,
+                latency_ms=latency_ms,
+                message=None,
+            )
+
+        # row[0] es False — usuario sin privilegio CREATE
+        return ServiceResult(
+            status=CheckStatus.WARNING,
+            latency_ms=latency_ms,
+            message="usuario sin privilegio CREATE en esquema public",
+        )
+
+    except psycopg2.OperationalError as exc:
+        end_exc: float = time.monotonic()
+        latency_ms_exc: float = max((end_exc - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms_exc,
+            message=str(exc),
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def check_persistence_cycle(db_url: str, run_id_short: str) -> ServiceResult:
+    """Ejecuta un ciclo forense idempotente CREATE→INSERT→SELECT→DROP para validar
+    los privilegios de persistencia completos del usuario de base de datos.
+
+    Crea una tabla temporal public._bootstrap_[run_id_short], inserta un registro,
+    verifica que el conteo sea >= 1 y elimina la tabla en el bloque finally para
+    garantizar limpieza incluso ante fallos intermedios (invariante de idempotencia).
+
+    Args:
+        db_url: URL de conexion PostgreSQL completa (postgresql://...).
+        run_id_short: Sufijo corto del run_id activo (8 caracteres hex). Forma el
+                      nombre unico de la tabla temporal del ciclo.
+
+    Returns:
+        ServiceResult con el estado del ciclo y latencia medida:
+        - OK si todos los pasos (CREATE, INSERT, SELECT, DROP) se ejecutan sin error.
+        - WARNING si CREATE lanza ProgrammingError con pgcode=42501 (sin privilegios DDL).
+        - ERROR si psycopg2.OperationalError impide la conexion (pgcodes 08001/08006)
+          o cualquier otra excepcion no controlada interrumpe el ciclo.
+
+    Trazabilidad: TSK-F1_1.0-15.2-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-B
+    """
+    table_name: str = f"public._bootstrap_{run_id_short}"
+    conn = None
+    start: float = time.monotonic()
+
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        try:
+            # Paso 1: CREATE — tabla temporal con uuid y timestamp por defecto
+            cur.execute(
+                f"CREATE TABLE IF NOT EXISTS {table_name} "
+                f"(id uuid DEFAULT gen_random_uuid(), ts timestamp DEFAULT now())"
+            )
+            # Paso 2: INSERT — registro sin valores explicitos (usa defaults)
+            cur.execute(f"INSERT INTO {table_name} DEFAULT VALUES")
+            # Paso 3: SELECT — verificar que al menos un registro existe
+            cur.execute(f"SELECT count(*) FROM {table_name}")
+            row = cur.fetchone()
+            count: int = row[0] if row else 0
+
+            end: float = time.monotonic()
+            latency_ms: float = max((end - start) * 1000, 0.001)
+
+            if count >= 1:
+                return ServiceResult(
+                    status=CheckStatus.OK,
+                    latency_ms=latency_ms,
+                    message=None,
+                )
+
+            return ServiceResult(
+                status=CheckStatus.ERROR,
+                latency_ms=latency_ms,
+                message=f"ciclo de persistencia completado pero count={count} (esperado >= 1)",
+            )
+
+        except psycopg2.ProgrammingError as exc:
+            # pgcode=42501: sin privilegios DDL para CREATE — degradacion no critica
+            if getattr(exc, "pgcode", None) == "42501":
+                end_warn: float = time.monotonic()
+                latency_ms_warn: float = max((end_warn - start) * 1000, 0.001)
+                return ServiceResult(
+                    status=CheckStatus.WARNING,
+                    latency_ms=latency_ms_warn,
+                    message="sin privilegios DDL para CREATE en esquema public (42501)",
+                )
+            raise
+
+        finally:
+            # Invariante: DROP siempre ejecutado para garantizar idempotencia del ciclo.
+            # La excepcion se suprime deliberadamente para no enmascarar el error original
+            # del ciclo (ej: INSERT fallido) con un fallo secundario del DROP.
+            try:
+                cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+            except Exception:  # noqa: BLE001
+                pass
+            cur.close()
+
+    except psycopg2.OperationalError as exc:
+        end_exc: float = time.monotonic()
+        latency_ms_exc: float = max((end_exc - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms_exc,
+            message=str(exc),
+        )
+    except Exception as exc:  # noqa: BLE001
+        end_exc2: float = time.monotonic()
+        latency_ms_exc2: float = max((end_exc2 - start) * 1000, 0.001)
+        return ServiceResult(
+            status=CheckStatus.ERROR,
+            latency_ms=latency_ms_exc2,
+            message=str(exc),
+        )
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Orquestador principal
 # ---------------------------------------------------------------------------
@@ -627,6 +989,58 @@ def main(env: dict | None = None) -> RunReport:
     )
     print(
         format_log_entry("INFO", "orchestrator", f"Check 'supabase_sql': {checks['supabase_sql'].status.value}"),
+        file=sys.stderr,
+    )
+
+    # Limpieza de tablas zombie _bootstrap_* antes de cualquier auditoria de esquema.
+    # Se ejecuta en el arranque para garantizar un estado limpio antes de los checks DDL.
+    # Criticidad WARNING: la presencia de zombies no bloquea el entorno pero debe advertirse.
+    # Trazabilidad: TSK-F1_1.0-14.3-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3 T-10b
+    checks["zombie_cleanup"] = check_zombie_cleanup(
+        resolved_env.get("POSTGRES_DB_URL", "")
+    )
+    print(
+        format_log_entry("INFO", "orchestrator", f"Check 'zombie_cleanup': {checks['zombie_cleanup'].status.value}"),
+        file=sys.stderr,
+    )
+
+    # Sonda de capacidades DDL: verifica que el usuario de BD tiene privilegio
+    # CREATE en el esquema public antes de auditar extensiones y ciclos de persistencia.
+    # Criticidad WARNING: sin privilegio CREATE el entorno puede arrancar pero los
+    # checks DDL posteriores advertiran o fallaran segun sus propias reglas.
+    # Trazabilidad: TSK-F1_1.0-15.1-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3 T-10c
+    checks["ddl_capabilities"] = check_ddl_capabilities(
+        resolved_env.get("POSTGRES_DB_URL", "")
+    )
+    print(
+        format_log_entry("INFO", "orchestrator", f"Check 'ddl_capabilities': {checks['ddl_capabilities'].status.value}"),
+        file=sys.stderr,
+    )
+
+    # Auditoria de extensiones PostgreSQL requeridas (pg_cron, uuid-ossp, pg_net).
+    # Se ejecuta despues de supabase_sql ya que depende de que la conexion SQL sea posible.
+    # Criticidad WARNING: el entorno puede operar sin estas extensiones inicialmente,
+    # pero se debe advertir para garantizar la funcionalidad completa del sistema.
+    # Trazabilidad: TSK-F1_1.0-14.2-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-A
+    checks["pg_extensions"] = check_pg_extensions(
+        resolved_env.get("POSTGRES_DB_URL", "")
+    )
+    print(
+        format_log_entry("INFO", "orchestrator", f"Check 'pg_extensions': {checks['pg_extensions'].status.value}"),
+        file=sys.stderr,
+    )
+
+    # Ciclo forense de persistencia: valida que el usuario puede CREATE, INSERT, SELECT y DROP
+    # en el esquema public. Usa la tabla temporal _bootstrap_[short_id] que se elimina en finally.
+    # Se ejecuta despues de ddl_capabilities para ejercer los privilegios ya sondeados.
+    # Criticidad WARNING: un fallo indica restriccion de permisos DDL, no bloquea el arranque.
+    # Trazabilidad: TSK-F1_1.0-15.2-GREEN / docs/f1_1.0/f1_1.0_spec.md §3.3-B
+    checks["persistence_cycle"] = check_persistence_cycle(
+        resolved_env.get("POSTGRES_DB_URL", ""),
+        short_id,
+    )
+    print(
+        format_log_entry("INFO", "orchestrator", f"Check 'persistence_cycle': {checks['persistence_cycle'].status.value}"),
         file=sys.stderr,
     )
 

@@ -105,7 +105,7 @@ def test_main_all_ok_returns_ok_status(ok_result):
     """main() con todos los checks en OK debe retornar RunReport.status == OK
     sin lanzar SystemExit.
 
-    Arrange: mocks de los cinco checks de servicio retornando ok_result.
+    Arrange: mocks de los seis checks de servicio retornando ok_result.
     Act: invocacion de main() con entorno completo valido.
     Assert: status global es OK y no se produce SystemExit.
     """
@@ -116,6 +116,10 @@ def test_main_all_ok_returns_ok_status(ok_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         report = main(env=_build_full_env())
@@ -142,6 +146,10 @@ def test_main_critical_error_raises_systemexit_1(ok_result, error_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=error_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act / Assert
         with pytest.raises(SystemExit) as exc_info:
@@ -171,6 +179,10 @@ def test_main_warning_service_error_does_not_raise_systemexit_1(
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act — no debe lanzar SystemExit
         try:
@@ -206,6 +218,10 @@ def test_main_diagnostic_first_runs_all_checks_even_if_one_fails(
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=error_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act — capturamos SystemExit(1) generado por el critico
         with pytest.raises(SystemExit):
@@ -229,6 +245,10 @@ def test_main_diagnostic_first_runs_all_checks_even_if_one_fails(
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=error_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         with pytest.raises(SystemExit):
             main(env=_build_full_env())
@@ -240,8 +260,12 @@ def test_main_diagnostic_first_runs_all_checks_even_if_one_fails(
     mock_resend = patch(f"{_MOCK_BASE}.check_resend", return_value=ok_result)
     mock_upstash = patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result)
     mock_http = patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result)
+    mock_pg_ext = patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result)
+    mock_zombie = patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result)
+    mock_ddl = patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result)
+    mock_persistence = patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result)
 
-    with mock_sql as m_sql, mock_github as m_github, mock_resend, mock_upstash, mock_http:
+    with mock_sql as m_sql, mock_github as m_github, mock_resend, mock_upstash, mock_http, mock_pg_ext, mock_zombie, mock_ddl, mock_persistence:
         with pytest.raises(SystemExit):
             main(env=_build_full_env())
 
@@ -263,7 +287,11 @@ def test_main_run_report_contains_all_service_keys(ok_result):
     Assert: el conjunto de claves de RunReport.checks es igual al conjunto esperado.
     """
     # Arrange
-    expected_keys = {"env_vars", "github", "resend", "upstash", "supabase_http", "supabase_sql"}
+    expected_keys = {
+        "env_vars", "github", "resend", "upstash",
+        "supabase_http", "supabase_sql", "pg_extensions", "zombie_cleanup",
+        "ddl_capabilities", "persistence_cycle",
+    }
 
     with (
         patch(f"{_MOCK_BASE}.check_github", return_value=ok_result),
@@ -271,6 +299,10 @@ def test_main_run_report_contains_all_service_keys(ok_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         report = main(env=_build_full_env())
@@ -298,8 +330,12 @@ def test_main_multiple_critical_errors_exits_1(ok_result, error_result):
     mock_github = patch(f"{_MOCK_BASE}.check_github", return_value=ok_result)
     mock_resend = patch(f"{_MOCK_BASE}.check_resend", return_value=ok_result)
     mock_upstash = patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result)
+    mock_pg_ext = patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result)
+    mock_zombie = patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result)
+    mock_ddl_cap = patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result)
+    mock_persistence = patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result)
 
-    with mock_sql as m_sql, mock_http as m_http, mock_github, mock_resend, mock_upstash:
+    with mock_sql as m_sql, mock_http as m_http, mock_github, mock_resend, mock_upstash, mock_pg_ext, mock_zombie, mock_ddl_cap, mock_persistence:
         # Act / Assert exit code
         with pytest.raises(SystemExit) as exc_info:
             main(env=_build_full_env())
@@ -328,6 +364,10 @@ def test_main_warning_only_status_is_warning_not_error(ok_result, error_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=error_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         try:
@@ -361,6 +401,10 @@ def test_main_run_report_has_valid_run_id(ok_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         report = main(env=_build_full_env())
@@ -387,6 +431,10 @@ def test_main_run_report_has_timestamp(ok_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         report = main(env=_build_full_env())
@@ -418,6 +466,10 @@ def test_main_env_vars_check_uses_provided_env(ok_result):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act / Assert — env vacio genera ERROR en variables criticas
         with pytest.raises(SystemExit) as exc_info:

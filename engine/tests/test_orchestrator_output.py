@@ -70,6 +70,10 @@ def test_main_prints_json_to_stdout(ok_result, capsys, monkeypatch):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         main(env=_build_full_env())
@@ -112,6 +116,10 @@ def test_main_logs_to_stderr(ok_result, capsys, monkeypatch):
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         main(env=_build_full_env())
@@ -147,7 +155,9 @@ def test_main_writes_github_step_summary_when_env_set(ok_result, tmp_path, monke
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_file))
 
     expected_services = [
-        "env_vars", "github", "resend", "upstash", "supabase_http", "supabase_sql",
+        "env_vars", "github", "resend", "upstash",
+        "supabase_http", "supabase_sql", "pg_extensions", "zombie_cleanup",
+        "ddl_capabilities", "persistence_cycle",
     ]
 
     with (
@@ -156,6 +166,10 @@ def test_main_writes_github_step_summary_when_env_set(ok_result, tmp_path, monke
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         main(env=_build_full_env())
@@ -196,6 +210,10 @@ def test_main_skips_github_step_summary_when_env_not_set(ok_result, monkeypatch)
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act / Assert — no debe propagar ninguna excepcion
         try:
@@ -231,6 +249,10 @@ def test_main_github_step_summary_contains_emoji_ok(ok_result, tmp_path, monkeyp
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act
         main(env=_build_full_env())
@@ -272,6 +294,10 @@ def test_main_github_step_summary_contains_emoji_error(
         patch(f"{_MOCK_BASE}.check_upstash", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_http", return_value=ok_result),
         patch(f"{_MOCK_BASE}.check_supabase_sql", return_value=error_result),
+        patch(f"{_MOCK_BASE}.check_pg_extensions", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_zombie_cleanup", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_ddl_capabilities", return_value=ok_result),
+        patch(f"{_MOCK_BASE}.check_persistence_cycle", return_value=ok_result),
     ):
         # Act — capturar SystemExit(1) esperado por el check critico fallido
         with pytest.raises(SystemExit) as exc_info:

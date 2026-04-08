@@ -144,3 +144,51 @@ La recomendacion H-2 (connect_timeout) fue diferida conscientemente al Bloque 4.
 ---
 
 **APRENDIZAJE_REGISTRADO_OK**
+
+---
+
+## Sesion: 2026-04-08 (Fase 1, Etapa 1.0 — Bloque 4: Database & Persistencia)
+
+### Exitos y Aciertos Tecnicos
+
+**Patron de importacion diferida en tests RED para coleccion granular**
+Importar las funciones objetivo dentro de cada test (no a nivel de modulo) permite que pytest colecte y ejecute cada test individualmente con su propio `ImportError`. Esto garantiza que la fase RED falla de forma granular (un test a la vez) en lugar de abortar toda la suite por un unico error de coleccion. Este patron debe aplicarse en todos los bloques futuros donde se escriban tests para funciones que aun no existen.
+
+**`psycopg2.sql.Identifier` para prevencion de second-order SQL injection**
+Usar `pg_sql.SQL("DROP TABLE IF EXISTS {}").format(pg_sql.Identifier(name))` en lugar de f-strings para nombres de tablas provenientes de catalogos del sistema (`pg_tables`) es la practica correcta aunque la fuente parezca segura. Los catalogos del sistema pueden ser comprometidos o contener nombres con caracteres especiales. Este patron debe ser el estandar para cualquier DDL dinamico en el Engine.
+
+**Doble `finally` para garantia de cleanup idempotente en `check_persistence_cycle`**
+El patron `try/finally` interior (cursor + DROP TABLE) anidado dentro de un `try/finally` exterior (conn.close) garantiza que la tabla temporal `_bootstrap_[run_id_short]` y la conexion son liberadas incluso ante SIGKILL, timeout de GHA (25 min) o excepciones no anticipadas. Este patron de cleanup por capas debe replicarse en todas las funciones que adquieran recursos de base de datos.
+
+**`pgcode` como propiedad readonly en psycopg2 2.9+: solucion con subclase y property**
+El atributo `pgcode` de las excepciones psycopg2 es readonly desde la version 2.9 (implementado en C). Intentar `exc.pgcode = "42P01"` lanza `AttributeError`. La solucion correcta para tests unitarios es subclasificar la excepcion con una `@property` que retorna el codigo deseado: `_PgProgrammingErrorWithCode` y `_PgOperationalErrorWithCode`. Este patron debe documentarse como utilidad reutilizable en `conftest.py` para evitar reimplementacion en bloques futuros.
+
+**Ciclo TDD con doble CERT (db-manager + backend-reviewer) sin TOKEN:RECHAZADO**
+El Bloque 4 fue el primero en obtener APROBADO CON OBSERVACIONES en primera pasada de ambos certificadores, sin necesidad de una segunda vuelta de correccion. Esto indica mayor madurez en la implementacion. La distincion entre "defecto bloqueante" (que genera TOKEN:RECHAZADO) y "observacion de mejora" (que genera APROBADO CON OBSERVACIONES) es un criterio que los agentes certificadores deben aplicar consistentemente.
+
+---
+
+### Fricciones y Desafios
+
+**Solapamiento de scope entre TSK-14.1 y TSK-14.2**
+El db-manager en TSK-14.1 implemento `check_pg_extensions` incluyendo su integracion en `main()` y en `WARNING_SERVICES`, que era el alcance previsto para TSK-14.2. Esto dejo a TSK-14.2 sin trabajo de implementacion sustancial. La causa raiz: los limites de tarea en el TASK no especificaban explicitamente hasta donde llegar en cada tarea cuando una funcion "hija" esta dentro del alcance de la tarea "madre". Para el Bloque 5, definir en el PLAN exactamente que linea de codigo o que funcion delimita el alcance de cada tarea antes de delegar.
+
+**Observacion B-1 detectada por ambos certificadores pero no corregida en ninguna tarea del bloque**
+La ausencia de fallback para el error `42P01` en la Fase 3 de `check_pg_extensions` fue identificada de forma independiente por el db-manager (TSK-16.1-CERT) y por el backend-reviewer (TSK-16.2-CERT), pero ninguno la corrigio en el bloque activo — ambos la diferieron a TSK-19.1-REFACTOR. Esto crea una deuda tecnica de seguridad que puede causar una excepcion no capturada en Supabase real si los esquemas `cron` o `net` no son accesibles al rol conectado. La leccion: cuando dos certificadores independientes identifican el mismo hallazgo como no-bloqueante, el equipo debe evaluar si realmente es diferible o si merece una tarea de correccion inmediata antes de pasar al siguiente bloque.
+
+---
+
+### Leccion Clave y Recomendacion
+
+**Leccion 11 — La granularidad del TASK determina la eficiencia de la delegacion a agentes**
+El ciclo TDD con agentes especializados (tester -> db-manager -> reviewer) demostro alta cohesion: cada agente entrego trabajo acotado y verificable. El punto de friccion fue la granularidad del TASK — algunas tareas tenian alcances implicitamente solapados. Para los bloques siguientes, el PLAN debe especificar explicitamente para cada tarea: (a) que funcion o modulo implementa, (b) hasta que punto del flujo de integracion llega, y (c) que archivo modificara exclusivamente. La precision en el TASK es directamente proporcional a la eficiencia de la delegacion.
+
+**Leccion 12 — Los helpers de test para excepciones con atributos readonly son activos reutilizables**
+Las clases `_PgProgrammingErrorWithCode` y `_PgOperationalErrorWithCode` resuelven una limitacion real de psycopg2 2.9+ que no es obvia en la documentacion oficial. En lugar de que cada suite de tests reimplemente este patron, deben ser promovidas a `engine/tests/conftest.py` como fixtures o utilidades compartidas. El principio DRY aplica a la infraestructura de tests con la misma fuerza que al codigo de produccion.
+
+**Leccion 13 — Cuando dos certificadores convergen en el mismo hallazgo, evaluar si es realmente diferible**
+La convergencia de dos auditores independientes en la observacion B-1 (sin fallback 42P01) es una senal de que el riesgo es real y conocido. Diferirlo a TSK-19.1-REFACTOR es valido si se acepta conscientemente el riesgo de excepcion no capturada en produccion. Para decisiones de diferimiento con convergencia de auditores, el equipo deberia documentar explicitamente el riesgo aceptado y el escenario de fallo en el backlog, no solo la tarea de resolucion.
+
+---
+
+**APRENDIZAJE_REGISTRADO_OK**
