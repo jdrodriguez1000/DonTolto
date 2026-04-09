@@ -192,3 +192,144 @@ La convergencia de dos auditores independientes en la observacion B-1 (sin fallb
 ---
 
 **APRENDIZAJE_REGISTRADO_OK**
+
+---
+
+## Sesion: 2026-04-08 (Fase 1, Etapa 1.0 — Bloque 5: CI/CD & Final Testing — parcial)
+
+### Exitos y Aciertos Tecnicos
+
+**Certificacion de seguridad CI/CD con remediacion previa de vulnerabilidades (no post-hoc)**
+El security-hardener ejecuto la auditoria de seguridad CI/CD (TSK-18-CERT) identificando 3 vulnerabilidades (VUL-01, VUL-02, VUL-03) y remediandolas antes de emitir el certificado SEGURIDAD_APROBADA. Este flujo — auditar, remediar, certificar en una sola pasada — es mas eficiente que el ciclo TOKEN:RECHAZADO -> correccion -> re-certificacion que ocurrio en el Bloque 3. La clave fue que el auditor tenia contexto previo de los patrones de vulnerabilidad tipicos (inyeccion de regex, placeholders con prefijos reales de tokens) y los busco proactivamente.
+
+**Suite de inyeccion de fallas con clasificacion por grupos conceptuales**
+Los 11 tests de `test_failure_injection.py` se organizaron en 4 grupos (Hard-Gate, No-Exit, Reporte, Diagnostic-First) que documentan el comportamiento esperado del sistema ante fallas. Esta taxonomia facilita la lectura del reporte de pytest, la identificacion de gaps de cobertura y la comprension del contrato de comportamiento del engine ante errores. Para cualquier suite de tests que valide comportamiento ante fallas, organizar por tipo de comportamiento (no por servicio) produce mayor legibilidad.
+
+**Placeholder de token en `.env.example` con semantica de instruccion, no de dato**
+Cambiar `ghp_tu-github-token-aqui` a `REEMPLAZAR_CON_TOKEN_REAL` resuelve dos problemas simultaneamente: (a) elimina el falso positivo en detectores de secretos (gitleaks, truffleHog) que reconocen el prefijo `ghp_`, y (b) hace el placeholder mas claro para el desarrollador que necesita configurar el entorno. La regla general: los placeholders en archivos de ejemplo deben usar lenguaje imperativo en mayusculas (`REEMPLAZAR_CON_X`) y nunca comenzar con prefijos propios de tokens reales.
+
+**Workflow GHA con nombre de archivo que refleja la etapa del proyecto**
+Nombrar el workflow `.github/workflows/f1_1.0_env_validation.yml` en lugar de un generico `ci.yml` o `validate.yml` garantiza que cada etapa del proyecto tenga su propio workflow identificable en la UI de GitHub Actions. Cuando el proyecto crezca a multiples workflows, la convencion de nombres `f[F]_[E]_[descripcion].yml` mantiene la trazabilidad entre la ejecucion de CI y la etapa del plan de desarrollo.
+
+---
+
+### Fricciones y Desafios
+
+**VUL-02 — Variables criticas ausentes de `_SECRET_ENV_KEYS`**
+`SUPABASE_URL` y `ADMIN_UUID` estaban clasificadas como variables criticas (exit 1 si fallan) pero sus valores no eran redactados en logs porque no figuraban en `_SECRET_ENV_KEYS`. Este tipo de inconsistencia — una variable critica que no es tratada como secreto — es dificil de detectar en revision de codigo porque requiere cruzar dos estructuras de datos separadas (`CRITICAL_SERVICES` vs `_SECRET_ENV_KEYS`). La correccion fue inmediata (agregar las variables a la lista), pero la causa raiz es la duplicacion de informacion: si una variable es critica, deberia ser automaticamente sanitizada sin requerir que figure en dos listas diferentes. Esta es una refactorizacion de diseno para TSK-19.1.
+
+**VUL-01 — Inyeccion de metacaracteres de regex en script bash**
+La funcion `get_env_value` en `provision_secrets.sh` usaba `grep -E` con el nombre de la variable como patron. Aunque los nombres de variables de entorno raramente contienen metacaracteres de regex, el script podia procesar cualquier string pasado desde `.env`, creando una superficie de ataque teorica. El cambio a `grep -F` (literal matching) es la practica correcta para cualquier script bash que use grep con entradas que no son patrones de regex controlados por el desarrollador.
+
+**Sesion concluida con working tree sin commitear**
+A diferencia de sesiones anteriores, el Bloque 5 parcial concluyo con 8 archivos modificados/creados en working tree sin commitear. Esto aumenta el riesgo de perder trabajo si el entorno es reiniciado, y tambien crea ambiguedad sobre el baseline de la refactorizacion TSK-19.1 (el agente podria refactorizar sobre cambios no persistidos en el historial de git). La disciplina de commitear al finalizar cada bloque — incluso si la etapa no esta completa — es un invariante operacional que debe mantenerse en todas las sesiones futuras.
+
+---
+
+### Leccion Clave y Recomendacion
+
+**Leccion 14 — La consistencia entre listas de variables criticas y variables a sanitizar debe ser una invariante estructural**
+El hallazgo VUL-02 revela un antipatron de diseno: tener dos listas separadas (`CRITICAL_SERVICES` y `_SECRET_ENV_KEYS`) que deben estar sincronizadas manualmente. Esta sincronizacion manual es un vector de error — si se agrega una variable critica nueva, el desarrollador debe recordar actualizarla en ambos lugares. La solucion de diseno correcta (para TSK-19.1-REFACTOR) es derivar `_SECRET_ENV_KEYS` automaticamente a partir de las claves de `ENV_VAR_PATTERNS` donde `is_critical=True`, eliminando la duplicacion. Una sola fuente de verdad es siempre superior a dos listas sincronizadas manualmente.
+
+**Leccion 15 — Auditar activos de CI/CD con la misma rigurosidad que el codigo de produccion**
+Los scripts de bash (`provision_secrets.sh`), los workflows de GHA (`.github/workflows/*.yml`) y los archivos de ejemplo (`.env.example`) son activos de infraestructura que ejecutan con privilegios elevados (acceso a secretos de repositorio, ejecucion en runners de GHA). La auditoria de seguridad TSK-18-CERT demostro que estos archivos tienen superficies de ataque propias (inyeccion de regex, placeholders con prefijos de tokens reales). El checklist de CERT para bloques de CI/CD debe incluir explicitamente: (a) inspeccion de scripts bash para inyeccion de argumentos, (b) verificacion de placeholders en archivos de ejemplo, y (c) validacion de que todas las variables criticas esten en la lista de sanitizacion.
+
+**Leccion 16 — Commitear al finalizar cada bloque es un invariante operacional, no una buena practica opcional**
+La sesion del Bloque 5 parcial concluyo sin commitear. Si la siguiente sesion comienza refactorizando (TSK-19.1) sin primero commitear el estado actual, la historia de git no tendra un punto de referencia limpio que separe "Bloque 5 CI/CD" de "Bloque 5 Refactorizacion". En proyectos con agentes especializados donde multiples agentes tocan el mismo archivo (check_env.py fue modificado por devops-integrator en TSK-17.1 y por security-hardener en TSK-18), el commit por bloque es la unica forma de mantener trazabilidad entre la tarea del agente y los cambios en el repositorio. Mandato: el primer comando de cualquier sesion que retome un bloque con cambios pendientes es `git add` + `git commit` antes de cualquier modificacion nueva.
+
+---
+
+**APRENDIZAJE_REGISTRADO_OK**
+
+---
+
+## Sesion: 2026-04-08 (Fase 1, Etapa 1.0 — Bloque 5: CI/CD & Final Testing — cierre completo TSK-19.1 + TSK-19.2)
+
+### Exitos y Aciertos Tecnicos
+
+**Refactorizacion sin ruptura de suite: 105/105 tests pasan tras eliminar ~60 lineas de codigo duplicado**
+La extraccion del helper `_http_get_with_retry` elimino el patron retry HTTP copiado literalmente 4 veces (GitHub, Resend, Upstash, Supabase REST) y el helper `_run_and_log_check` colapso 10 bloques identicos check+log en `main()`. Ambas extracciones se realizaron sin modificar ningun contrato publico ni romper un solo test. La cobertura de 105 tests existentes funciono como red de seguridad que valido la refactorizacion en su totalidad. Este resultado confirma que una suite de tests robusta es el prerequisito indispensable para refactorizaciones seguras.
+
+**Deteccion de bug latente mediante refactorizacion: `latency_ms=0.0` violaba `Field(gt=0)`**
+Al consolidar el patron de construccion del `ServiceResult` en el path de error dentro de `_http_get_with_retry`, se hizo evidente que el return de fallo de red usaba `latency_ms=0.0`. Este valor viola la restriccion `gt=0` del modelo Pydantic. El bug era latente: ninguno de los 105 tests lo ejercia explicitamente porque los mocks de tests simulaban respuestas exitosas o errores tipados, no el path de red caida. La refactorizacion —al centralizar el codigo— expuso la inconsistencia antes de que llegara a produccion. Leccion: la refactorizacion no es solo estetica, es una herramienta de deteccion de defectos.
+
+**Renombre semantico de parametro resuelve colision de namespace silenciosa**
+El parametro `run_id_short` en `check_persistence_cycle` colisionaba en nombre con la funcion importada `run_id_short` de `utils.py`. En Python, los parametros de funcion tienen precedencia sobre nombres del modulo dentro del scope de la funcion, por lo que la colision no causaba un error en tiempo de ejecucion. Sin embargo, hacia el codigo ambiguo: al leer el cuerpo de la funcion, `run_id_short` podia referirse tanto al parametro como a la funcion importada segun el contexto. El renombre a `table_suffix` elimina la ambiguedad y describe mejor el proposito. Leccion: las colisiones silenciosas de nombres son defectos de legibilidad que generan bugs en refactorizaciones futuras cuando alguien anade una llamada a `run_id_short()` dentro del mismo scope.
+
+**Auditoria tecnica final con APROBADO en primera pasada tras refactorizacion completa**
+El backend-reviewer en TSK-19.2 emitio APROBADO con solo 3 hallazgos INFO (ninguno bloqueante). Esto contrasta con el Bloque 3 donde el primer CERT fue TOKEN:RECHAZADO. La diferencia: en el Bloque 5 la refactorizacion partio de un backlog documentado (OBS-01 hasta D-3) con criterios de resolucion explicitos, en lugar de implementar desde cero. Cuando el trabajo entrante a una CERT tiene contexto de deuda documentada y criterios de aceptacion claros, la probabilidad de APROBADO en primera pasada aumenta sustancialmente.
+
+---
+
+### Fricciones y Desafios
+
+**Deuda tecnica acumulada de 12 items tratada como un bloque monolitico en lugar de tareas incrementales**
+El backlog de observaciones (OBS-01 a D-3) se acumulo a lo largo de 4 bloques (B2-B5) y se programo para resolverse en una sola tarea TSK-19.1. Aunque la ejecucion fue exitosa, este enfoque monolitico concentro todo el riesgo de refactorizacion en una unica sesion. Si algun item del backlog hubiera introducido una regresion, habria sido mas dificil identificar cuales de los 12 cambios la causaron. Para bloques futuros, considerar resoluciones incrementales de deuda tecnica al finalizar cada bloque (en lugar de acumularlas) reduce el riesgo acumulado y mantiene el codebase mas limpio en todo momento.
+
+**3 hallazgos INFO del TSK-19.2 aceptados como deuda sin tarea de resolucion asignada**
+Los hallazgos INFO-A (UUID v4 validator), INFO-B (fallback 42P01) e INFO-C (tests D-1/D-3 ausentes) fueron identificados por el reviewer y aceptados como diferibles sin asignar una tarea de resolucion en el backlog activo. A diferencia de sesiones anteriores donde cada observacion recibio un ID de tarea objetivo (ej. "resolver en TSK-19.1"), estos hallazgos quedaron sin ancla de seguimiento. En el contexto del cierre de la Etapa 1.0, esto es aceptable; sin embargo, antes de iniciar la Etapa 1.1 o cualquier fase posterior que use `check_env.py`, estos hallazgos deben ser evaluados para determinar si se convierten en deuda tecnica formal o se descartan conscientemente.
+
+**Working tree con 8 archivos sin commitear al finalizar el Bloque 5 completo**
+A pesar de que la Leccion 16 de la sesion anterior documentaba explicitamente este antipatron, la sesion actual de cierre del Bloque 5 tambien concluye sin commit. La causa: el protocolo de cierre (session-closer) es la ultima tarea de la sesion y los commits son responsabilidad del `devops-integrator` (TSK-22.3), que aun no fue invocado. La estructura del TASK coloca el commit final despues del cierre administrativo, lo que significa que el working tree sin commitear es el estado esperado al cerrar esta sesion. No es un incumplimiento — es consecuencia del diseno del Cierre de Etapa. Sin embargo, la descripcion del "Next Step" debe ser inequivoca: el primer comando del proximo agente es `git commit`.
+
+---
+
+### Leccion Clave y Recomendacion
+
+**Leccion 17 — La refactorizacion es una herramienta de deteccion de defectos, no solo de limpieza**
+El proceso de TSK-19.1 demostro que centralizar codigo duplicado expone inconsistencias que los tests individuales no detectan. El bug `latency_ms=0.0` existia en 4 funciones distintas pero ningun test ejercia ese path especifico. Al consolidarlas en un solo helper, la inconsistencia se hizo visible antes de que llegara a produccion. La refactorizacion debe planificarse no solo como actividad estetica sino como auditoria activa del comportamiento en paths de error que los tests pueden no cubrir. Un checklist de refactorizacion debe incluir: "verificar que el patron de construccion de resultado en paths de error sea consistente con las restricciones del modelo de datos".
+
+**Leccion 18 — El backlog documentado con criterios de resolucion es prerequisito para CERTs de primera pasada**
+La diferencia entre el Bloque 3 (TOKEN:RECHAZADO en primera CERT) y el Bloque 5 (APROBADO en primera CERT) no fue la calidad del codigo en si — fue la calidad de la especificacion del trabajo. En el Bloque 5, el backlog tenia 12 items con ID, descripcion, origen y accion concreta. El backend-coder supo exactamente que resolver. El backend-reviewer supo exactamente que verificar. Esta correlacion entre especificacion de trabajo y tasa de aprobacion en CERT sugiere que invertir tiempo en documentar el backlog con precision antes de delegar es mas eficiente que iterar con correcciones post-rechazo.
+
+**Leccion 19 — Las colisiones silenciosas de nombres de parametro son deuda de legibilidad con interes compuesto**
+El caso `run_id_short` (parametro) vs `run_id_short` (funcion importada) no causaba error en runtime pero creaba ambiguedad que se compone con cada nueva lectura del codigo y con cada futura modificacion. En un sistema con agentes especializados donde diferentes agentes leen el mismo archivo en distintos momentos, la ambiguedad de nombres es especialmente costosa: obliga a cada agente a reconstruir el contexto de resolucion de nombres en lugar de leer el codigo directamente. La regla practica: si un parametro de funcion tiene el mismo nombre que cualquier simbolo importado en el modulo, renombrarlo es siempre la decision correcta independientemente de si causa un error activo.
+
+---
+
+**APRENDIZAJE_REGISTRADO_OK**
+
+---
+
+## Sesion: 2026-04-08 (Fase 1, Etapa 1.0 — Cierre Formal: TSK-20, 21, 22.1, 22.2)
+
+### Exitos y Aciertos Tecnicos
+
+**Cadena de cierre ejecutada sin retrocesos en una sola sesion**
+Las 4 tareas de cierre (Suite de Integracion, Auditoria, Resumen Ejecutivo, Handoff) se ejecutaron secuencialmente en una unica sesion sin bloqueos ni TOKEN:RECHAZADO. La clave fue que todos los prerequisitos (105 tests passing, tokens de dominio vigentes, documentos SDD autorizados) estaban en orden antes de iniciar la secuencia. Un cierre de etapa fluido es consecuencia directa del rigor aplicado durante los bloques de desarrollo.
+
+**Suite de integracion final como gate objetivo, no ceremonial**
+La ejecucion de TSK-20 (105/105 PASSED, cobertura 94%) no fue un "gate de papel": valido que los cambios de refactorizacion del Bloque 5 no introdujeron regresiones. En sistemas donde la refactorizacion ocurre en la ultima tarea del sprint, el gate de integracion final es la ultima oportunidad de detectar regresiones antes de cerrar la etapa formalmente.
+
+**Auditoria CONFORME con hallazgo H-01 regularizado sin bloqueo**
+El hallazgo H-01 del `stage-auditor` (`requirements.in` y `conftest.py` sin tarea atomica explicita) fue regularizado en el certificado sin generar un bloqueo. La distincion entre "Codigo Fantasma con logica de negocio" (bloqueante) y "infraestructura de soporte sin tarea atomica" (regularizable) es una capacidad de juicio del auditor que debe preservarse en etapas futuras.
+
+**`docs/executives/f1_1.0_executive.md` como puente entre metricas tecnicas y valor de negocio**
+El Resumen Ejecutivo traduce metricas tecnicas (105 tests, 94% cobertura, 3 VULs cerradas) a valor de negocio (guardian de infraestructura, blindaje de cadena de suministro, deteccion proactiva de degradacion). Para etapas futuras, el `stage-closer` debe ser informado con el maximo contexto de logros para producir un ejecutivo de maxima calidad.
+
+---
+
+### Fricciones y Desafios
+
+**H-01: Artefactos de infraestructura sin tarea atomica en TASK LIST**
+`engine/requirements.in` y `conftest.py` en la raiz fueron detectados como potencial "Codigo Fantasma" por el auditor porque no tenian tarea atomica explicita en `f1_1.0_task.md`. Ambos son legitimos, pero su ausencia en el TASK crea ambiguedad. Prevencion: al crear artefactos de soporte, referenciarlos en la nota de la tarea mas relacionada. Costo de prevencion: 2 lineas. Costo de deteccion: investigacion del auditor.
+
+**Working tree con 11+ archivos sin commitear al cerrar TSK-22.2**
+El diseno del TASK coloca el commit (TSK-22.3) despues del cierre administrativo, haciendo inevitable este estado. No es un incumplimiento — es consecuencia del diseno. La solucion: invocar al `devops-integrator` para TSK-22.3 inmediatamente despues de TSK-22.2 en la misma sesion, o asegurar que sea la primera tarea de la siguiente sesion.
+
+---
+
+### Leccion Clave y Recomendacion
+
+**Leccion 20 — El cierre de etapa es un producto tecnico, no una formalidad administrativa**
+La secuencia TSK-20 → TSK-21 → TSK-22.1 produce tres artefactos de valor real: certificado de integracion, certificado de auditoria y resumen ejecutivo. En etapas futuras, la calidad de estos artefactos debe ser proporcional a la complejidad tecnica de la etapa.
+
+**Leccion 21 — Los tokens de dominio emitidos durante el desarrollo aceleran el cierre formal**
+El cierre fue rapido porque los tokens (seguridad, QA) fueron emitidos durante los bloques, no al final. El `stage-auditor` solo verifico que existian — no tuvo que esperar nuevas auditorias. Para etapas futuras: emitir tokens de dominio al finalizar cada bloque reduce el tiempo de la secuencia de cierre de horas a minutos.
+
+**Leccion 22 — Referenciar artefactos de infraestructura en el TASK previene falsos positivos de Codigo Fantasma**
+Todo archivo creado durante la ejecucion de una tarea debe estar mencionado (aunque sea en la nota) en esa tarea del TASK LIST. Regla: si un artefacto no tiene tarea explicita, referenciar en la nota de la tarea mas proxima: "Artefacto de soporte: `nombre_archivo` — [descripcion breve de su rol]".
+
+---
+
+**APRENDIZAJE_REGISTRADO_OK**
