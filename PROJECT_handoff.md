@@ -1,7 +1,7 @@
 # PROJECT_handoff.md: DonTolto
 
 ---
-**Ultima Actualizacion**: 2026-04-08
+**Ultima Actualizacion**: 2026-04-09
 **Responsable del Cierre**: session-closer (Protocolo de Handoff Tecnico)
 **Estado de Persistencia**: ESTADO_PERSISTIDO_OK
 ---
@@ -11,168 +11,119 @@
 | Dimension          | Detalle                                                                              |
 | :----------------- | :----------------------------------------------------------------------------------- |
 | **Fase Activa**    | Fase 1 — Infraestructura de Datos (Cimentacion)                                      |
-| **Etapa Activa**   | **1.0 — CERRADA** / Proxima: **1.1 — Setup de Supabase y DDL**                       |
-| **Bloque Activo**  | Cierre de Etapa — TSK-22.3 PENDIENTE (commit final + PR `devops-integrator`)         |
-| **Rama Git**       | `feat/f1_1.0_env_validation`                                                         |
-| **Ultimo Commit**  | `366f89e` — `feat: CI/CD workflow GHA, refactorizacion final check_env.py y cierre tecnico Bloque 5 (f1_1.0)` |
-| **Capas Tecnicas** | Backend (Python Engine), Infra (GitHub Actions, CI/CD), Gobernanza (Cierre de Etapa) |
+| **Etapa Activa**   | **1.1 — Setup de Supabase y DDL** (Etapa 1.0 cerrada formalmente)                    |
+| **Bloque Activo**  | Bloque 2 COMPLETADO — Siguiente: Bloque 3 (Motor de Performance — TDD)               |
+| **Rama Git**       | `feat/f1_e1_setup_supabase_ddl`                                                      |
+| **Ultimo Commit**  | `0c716fa` — `chore: archivar lecciones aprendidas de F1_1.0 en carpeta history`      |
+| **Capas Tecnicas** | DB/Infra (Supabase local, pgTap, PostgreSQL 16, pg_cron, pg_net)                     |
 
 ---
 
 ## §2 Hitos y Avance de Etapa
 
-### Estado del Bloque 1 — Scaffolding & Setup [Etapa 1.0.1]: 100% COMPLETADO
+### Estado del Bloque 0/1 — Validacion & Scaffolding [Micro-Setup]: 100% COMPLETADO
 
-| Tarea             | Descripcion                                          | Estado     |
-| :---------------- | :--------------------------------------------------- | :--------- |
-| TSK-F1_1.0-01     | Estructura de directorios `engine/src/`, `engine/tests/` y `__init__.py` | Completado |
-| TSK-F1_1.0-02     | Dependencias con hashes SHA256 e integridad verificada | Completado |
-| TSK-F1_1.0-03     | Modulo `utils.py`: utilidades de infraestructura reutilizables | Completado |
+| Tarea              | Descripcion                                                                | Estado     |
+| :----------------- | :------------------------------------------------------------------------- | :--------- |
+| TSK-F1_1.1-01.1    | `supabase/config.toml` creado con estructura canonica                      | Completado |
+| TSK-F1_1.1-01.2    | `extra_search_path` configurado (luego corregido en TSK-03.3)              | Completado |
+| TSK-F1_1.1-02.1    | `supabase/tests/001_environment_extensions.sql` (3 assertions pgTap)       | Completado |
+| TSK-F1_1.1-02.1.1  | `supabase/tests/002_postgres_version.sql` (2 assertions: >= 15 y >= 16)    | Completado |
+| TSK-F1_1.1-02.2    | `supabase/tests/003_immutable_functions.sql` (4 assertions IMMUTABLE)      | Completado |
+| TSK-F1_1.1-02.3    | `supabase/tests/004_pgtap_connectivity.sql` (3 assertions canary)          | Completado |
+| TSK-F1_1.1-03.1    | `supabase/tests/005_search_path_restrictive.sql` (8 assertions RED)        | Completado |
+| TSK-F1_1.1-03.2    | Gate 0 certificado APTO. Token: GATE0-f1-1.1-CERT-001                      | Completado |
+| TSK-F1_1.1-03.3    | `supabase db reset` exitoso. Stack local operativo en `127.0.0.1:54322`    | Completado |
 
-### Estado del Bloque 2 — Modelado & Engine Core [TDD Cycle]: 100% COMPLETADO
+### Estado del Bloque 2 — Schema Core & Singleton [TDD]: 100% COMPLETADO
 
-| Tarea                  | Agente              | Descripcion                                          | Estado     |
-| :--------------------- | :------------------ | :--------------------------------------------------- | :--------- |
-| TSK-F1_1.0-04-RED      | backend-tester      | Tests fallidos de Modelos y Sanitizacion             | Completado |
-| TSK-F1_1.0-05-GREEN    | backend-coder       | Implementacion de Modelos Pydantic                   | Completado |
-| TSK-F1_1.0-06-GREEN    | security-hardener   | Implementacion de Sanitizacion de Tokens/Keys        | Completado |
-| TSK-F1_1.0-07-RED      | backend-tester      | Mocks y Tests de Orquestacion (Diagnostic-First)     | Completado |
-| TSK-F1_1.0-07.1-GREEN  | backend-coder       | Configuracion de Mapeo de Criticidad                 | Completado |
-| TSK-F1_1.0-08-GREEN    | backend-coder       | Orquestador Core, Agregacion y Logica de Salida      | Completado |
-| TSK-F1_1.0-09-CERT     | backend-reviewer    | CERTIFICACION TECNICA CORE — APROBADO                | Completado |
+| Tarea                      | Descripcion                                                                              | Estado     |
+| :------------------------- | :--------------------------------------------------------------------------------------- | :--------- |
+| TSK-F1_1.1-04.1-RED        | `006_singleton_constraint.sql` — 4 assertions Singleton CHECK y PK violation            | Completado |
+| TSK-F1_1.1-04.2-RED        | `007_singleton_delete_block.sql` — 4 assertions trigger DELETE block                    | Completado |
+| TSK-F1_1.1-04.3-RED        | `008_seed_admin_constants.sql` — 5 assertions admin_uuid, umbral, kill-switch            | Completado |
+| TSK-F1_1.1-05.1-RED        | `009_draws_array_constraints.sql` — 6 assertions arrays, superbalota, type              | Completado |
+| TSK-F1_1.1-05.2-RED        | `010_fn_validate_ball_array.sql` — 7 assertions IMMUTABLE, 3 Reglas de Oro              | Completado |
+| TSK-F1_1.1-06.1-GREEN      | Migracion `20260409000001_block_1_2.sql` con schema core completo                       | Completado |
+| TSK-F1_1.1-06.2-GREEN      | Refactor migracion: orden canonico 6 bloques, eliminacion 4 ALTER TABLE redundantes     | Completado |
+| TSK-F1_1.1-07.1-CERT       | Certificacion trazabilidad. Token: CERT-B2-f1-1.1-TRAZ-001                              | Completado |
+| TSK-F1_1.1-07.2-CERT       | Certificacion ghost code. Token: CERT-B2-f1-1.1-GHOST-001                               | Completado |
 
-### Estado del Bloque 3 — Handshaking de APIs Externas [TDD Cycle]: 100% COMPLETADO
+### Resumen de Progreso Global (Etapa 1.1)
 
-| Tarea                  | Agente              | Descripcion                                              | Estado     |
-| :--------------------- | :------------------ | :------------------------------------------------------- | :--------- |
-| TSK-F1_1.0-10.1-RED    | backend-tester      | Tests fallidos: GitHub Handshake (8 tests)               | Completado |
-| TSK-F1_1.0-10.2-RED    | backend-tester      | Tests fallidos: Resend Handshake (8 tests)               | Completado |
-| TSK-F1_1.0-10.3-RED    | backend-tester      | Tests fallidos: Upstash Redis Handshake (8 tests)        | Completado |
-| TSK-F1_1.0-10.4-RED    | backend-tester      | Tests fallidos: Supabase REST/SQL (12 tests)             | Completado |
-| TSK-F1_1.0-11.1-GREEN  | backend-coder       | Implementacion Handshake GitHub                          | Completado |
-| TSK-F1_1.0-11.2-GREEN  | backend-coder       | Implementacion Handshake Resend                          | Completado |
-| TSK-F1_1.0-11.3-GREEN  | backend-coder       | Implementacion Handshake Upstash                         | Completado |
-| TSK-F1_1.0-11.4-GREEN  | backend-coder       | Implementacion Handshake Supabase REST + SQL             | Completado |
-| TSK-F1_1.0-12.1-CERT   | backend-reviewer    | Certificacion de Mapeo de Contratos API — APROBADO       | Completado |
-| TSK-F1_1.0-12.2-CERT   | security-hardener   | Certificacion de Scopes y Seguridad de APIs — APROBADO   | Completado |
+- **Bloque 0/1**: 9/9 tareas completadas (100%)
+- **Bloque 2**: 9/9 tareas completadas (100%) — 26 assertions en VERDE
+- **Bloque 3**: 0/N tareas completadas — SIGUIENTE BLOQUE
+- **Etapa 1.1 global**: EN PROGRESO — Bloques 0/1 y 2 COMPLETADOS, Bloque 3 pendiente
 
-### Estado del Bloque 4 — Database & Persistencia [TDD Cycle]: 100% COMPLETADO
+### Historial de Etapas Cerradas (referencia)
 
-| Tarea                  | Agente              | Descripcion                                                                        | Estado     |
-| :--------------------- | :------------------ | :--------------------------------------------------------------------------------- | :--------- |
-| TSK-F1_1.0-13-RED      | backend-tester      | 15 tests fallidos para 4 funciones DB (check_pg_extensions, check_zombie_cleanup, check_ddl_capabilities, check_persistence_cycle) | Completado |
-| TSK-F1_1.0-14.1-GREEN  | db-manager          | Implementacion check_pg_extensions (auditoria extensiones pg_cron, uuid-ossp, pg_net) | Completado |
-| TSK-F1_1.0-14.2-GREEN  | db-manager          | Integracion check_pg_extensions en main() + WARNING_SERVICES                      | Completado |
-| TSK-F1_1.0-14.3-GREEN  | db-manager          | Implementacion check_zombie_cleanup (limpieza tablas _bootstrap_* huerfanas)       | Completado |
-| TSK-F1_1.0-15.1-GREEN  | db-manager          | Implementacion check_ddl_capabilities (has_schema_privilege CREATE)                | Completado |
-| TSK-F1_1.0-15.2-GREEN  | backend-tester      | Implementacion check_persistence_cycle (ciclo CREATE->INSERT->SELECT->DROP)        | Completado |
-| TSK-F1_1.0-16.1-CERT   | db-manager          | Certificacion Calidad SQL/RLS — APROBADO CON OBSERVACIONES                         | Completado |
-| TSK-F1_1.0-16.2-CERT   | backend-reviewer    | Certificacion Integridad Persistencia — APROBADO CON OBSERVACIONES                 | Completado |
-
-### Estado del Bloque 5 — CI/CD & Final Testing: 100% COMPLETADO
-
-| Tarea                      | Agente              | Descripcion                                                                                       | Estado       |
-| :------------------------- | :------------------ | :------------------------------------------------------------------------------------------------ | :----------- |
-| TSK-F1_1.0-17.1-IMPL       | devops-integrator   | Reporte GHA Step Summary, Snapshot de Entorno y Workflow YAML `.github/workflows/f1_1.0_env_validation.yml` | Completado |
-| TSK-F1_1.0-17.2-OPS        | devops-integrator   | Provisionamiento de Secretos — script `provision_secrets.sh` + `secrets_checklist.md`            | Completado   |
-| TSK-F1_1.0-18-CERT         | security-hardener   | Certificacion de Seguridad CI/CD — SEGURIDAD_APROBADA (3 vulnerabilidades remediadas antes de cert) | Completado |
-| TSK-F1_1.0-18.2-VERIF      | backend-tester      | Validacion de Inyeccion de Fallas — 11/11 PASSED                                                 | Completado   |
-| TSK-F1_1.0-19.1-REFACTOR   | backend-coder       | Refactorizacion Final — helpers `_http_get_with_retry` y `_run_and_log_check`, elevacion de `_DIRECT_DEPS`, fix `table_suffix`, bug fix `latency_ms=0.0` | Completado |
-| TSK-F1_1.0-19.2-REFACTOR   | backend-reviewer    | Auditoria Tecnica Final — 105/105 tests pasan, 3 hallazgos INFO no bloqueantes — APROBADO        | Completado   |
-
-### Resultado de Suite de Pruebas al Cierre del Bloque 5 (FINAL)
-
-**105 passed, 0 failed**
-
-Distribucion de tests:
-- `engine/tests/test_models.py` — 15 tests (modelos Pydantic)
-- `engine/tests/test_sanitizer.py` — 10 tests (sanitizacion)
-- `engine/tests/test_orchestrator.py` — 12 tests (logica del orquestador)
-- `engine/tests/test_orchestrator_output.py` — 6 tests (formato salida GHA)
-- `engine/tests/test_github_handshake.py` — 8 tests (GitHub API)
-- `engine/tests/test_resend_handshake.py` — 8 tests (Resend API)
-- `engine/tests/test_upstash_handshake.py` — 8 tests (Upstash Redis)
-- `engine/tests/test_supabase_handshake.py` — 12 tests (Supabase HTTP + SQL)
-- `engine/tests/test_database.py` — 15 tests (DB extensions, zombie cleanup, DDL, persistence cycle)
-- `engine/tests/test_failure_injection.py` — 11 tests (inyeccion de fallas CI/CD)
-
-### Estado del Cierre de Etapa
-
-| Tarea                      | Agente              | Descripcion                                                                  | Estado     |
-| :------------------------- | :------------------ | :--------------------------------------------------------------------------- | :--------- |
-| TSK-F1_1.0-20              | backend-tester      | Suite de Integracion Real — 105/105 PASSED, cobertura 94%                    | Completado |
-| TSK-F1_1.0-21              | stage-auditor       | Auditoria de Gobernanza — CONFORME. Token: AUDIT-F1_1.0-TSK21-CONFORME-20260408 | Completado |
-| TSK-F1_1.0-22.1-CLOSURE    | stage-closer        | Cierre formal — `docs/executives/f1_1.0_executive.md` emitido. Token: EXEC-CLOSE-F1_1.0-20260408 | Completado |
-| TSK-F1_1.0-22.2-HANDOFF    | session-closer      | Persistencia de Estado y Lecciones Aprendidas                                | Completado |
-| TSK-F1_1.0-22.3-CLOSURE    | devops-integrator   | Commit final y PR hacia `dev`                                                | **PENDIENTE** |
-
-### Resumen de Progreso Global
-
-- **Bloque 1**: 3/3 tareas completadas (100%)
-- **Bloque 2**: 7/7 tareas completadas (100%)
-- **Bloque 3**: 10/10 tareas completadas (100%)
-- **Bloque 4**: 8/8 tareas completadas (100%)
-- **Bloque 5**: 6/6 tareas completadas (100%)
-- **Cierre de Etapa**: 4/5 tareas completadas (80%) — TSK-22.3 pendiente
-- **Etapa 1.0 global**: CERRADA FORMALMENTE — solo falta commit/PR del `devops-integrator`
+| Etapa | Descripcion                    | Token de Cierre                  | Estado   |
+| :---- | :----------------------------- | :------------------------------- | :------- |
+| 1.0   | Validacion de Entorno (Python) | EXEC-CLOSE-F1_1.0-20260408       | CERRADA  |
 
 ---
 
 ## §3 Inventario Tecnico de Cambios
 
-### Archivos Modificados en Esta Sesion (Bloque 5 — TSK-19.1-REFACTOR + TSK-19.2-REFACTOR)
+### Archivos Creados en Esta Sesion (Bloque 2 — TDD Cycle)
 
-| Archivo                           | Tipo       | Descripcion                                                                                                                                                                              |
-| :-------------------------------- | :--------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `engine/src/check_env.py`         | Modificado | Refactorizacion completa: helper `_http_get_with_retry` elimina patron HTTP retry duplicado ~60 lineas; helper `_run_and_log_check` colapsa 10 bloques check+log en `main()`; constante `_DIRECT_DEPS` elevada a nivel de modulo; parametro `table_suffix` (antes `run_id_short`) en `check_persistence_cycle` resuelve colision de nombre con funcion importada; bug fix: return de fallo de red usaba `latency_ms=0.0` violando restriccion `gt=0` |
-| `docs/f1_1.0/f1_1.0_task.md`     | Modificado | Tareas TSK-19.1-REFACTOR y TSK-19.2-REFACTOR marcadas `[x]` completadas                                                                                                                |
+| Archivo                                                                     | Tipo  | Descripcion                                                                                                       |
+| :-------------------------------------------------------------------------- | :---- | :---------------------------------------------------------------------------------------------------------------- |
+| `supabase/tests/006_singleton_constraint.sql`                               | Nuevo | 4 assertions pgTap: CHECK id=1 y PK violation en tabla `system_configuration`.                                   |
+| `supabase/tests/007_singleton_delete_block.sql`                             | Nuevo | 4 assertions pgTap: trigger BEFORE DELETE FOR EACH STATEMENT bloquea eliminacion.                                |
+| `supabase/tests/008_seed_admin_constants.sql`                               | Nuevo | 5 assertions pgTap: admin_uuid NOT NULL, umbral numerico, kill-switch boolean.                                    |
+| `supabase/tests/009_draws_array_constraints.sql`                            | Nuevo | 6 assertions pgTap: validacion de arrays de bolas, superbalota, tipo de sorteo.                                   |
+| `supabase/tests/010_fn_validate_ball_array.sql`                             | Nuevo | 7 assertions pgTap: IMMUTABLE, 3 Reglas de Oro (rango, duplicados, cardinalidad).                                |
+| `supabase/migrations/20260409000001_block_1_2.sql`                          | Nuevo | Migracion DDL Bloque 2: tablas `system_configuration`, `draws`, `manual_verification_queue`, `system_logs`, funcion `fn_validate_ball_array`, trigger `tg_prevent_singleton_delete`, seed inicial. |
+| `docs/f1_1.1/audit/pipeline/cert_block2_trazabilidad_TSK-07.1.md`          | Nuevo | Token de certificacion de trazabilidad CERT-B2-f1-1.1-TRAZ-001.                                                  |
+| `docs/f1_1.1/audit/pipeline/cert_block2_ghostcode_TSK-07.2.md`             | Nuevo | Token de certificacion ghost code CERT-B2-f1-1.1-GHOST-001.                                                      |
 
-### Archivos Creados en Sesiones Anteriores del Bloque 5 (referencia)
+### Archivos Modificados en Esta Sesion
 
-| Archivo                                                      | Tipo    | Descripcion                                                                                                                                                                              |
-| :----------------------------------------------------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/f1_1.0_env_validation.yml`                | Nuevo   | Workflow GHA: triggers `workflow_dispatch` + schedule `'30 6 * * 2,4,0'` (1:30 AM COT), permisos `contents: read`, 4 steps (checkout, setup-python 3.12, pip --require-hashes, python -m engine.src.check_env), 8 secretos via `env:` |
-| `engine/scripts/provision_secrets.sh`                        | Nuevo   | Script bash: carga 7 secretos en GHA via `gh secret set`, excluye GITHUB_TOKEN (automatico), funcion `get_env_value` hardened con `grep -F` + escapado de metacaracteres (VUL-01 remediado) |
-| `docs/f1_1.0/ops/secrets_checklist.md`                       | Nuevo   | Guia operacional con tabla de secretos, regex de validacion y nivel de criticidad                                                                                                        |
-| `docs/f1_1.0/audit/security/ci_cd_security_cert.md`          | Nuevo   | Certificado formal de seguridad CI/CD con hallazgos VUL-01, VUL-02, VUL-03 e INFO-01 documentados; estado SEGURIDAD_APROBADA                                                            |
-| `engine/tests/test_failure_injection.py`                     | Nuevo   | 11 tests de inyeccion de fallas: Grupo 1 (5 hard-gate exit 1), Grupo 2 (3 no-exit warnings), Grupo 3 (2 reporte en error), Grupo 4 (1 diagnostic-first con fallo critico)              |
+| Archivo                        | Tipo       | Descripcion                                                                              |
+| :----------------------------- | :--------- | :--------------------------------------------------------------------------------------- |
+| `docs/f1_1.1/f1_1.1_task.md`  | Modificado | Tareas TSK-04.1-RED a TSK-07.2-CERT del Bloque 2 marcadas `[x]` con evidencias.         |
 
-### Archivos de Sesiones Anteriores (referencia historica, sin cambios en esta sesion)
+### Artefactos del Bloque 2 — Detalle Canonico
 
-| Archivo                                        | Origen  | Estado        |
-| :--------------------------------------------- | :------ | :------------ |
-| `engine/src/utils.py`                          | B1      | Sin cambios   |
-| `engine/src/models.py`                         | B2      | Sin cambios   |
-| `engine/src/sanitizer.py`                      | B2      | Sin cambios   |
-| `engine/tests/conftest.py`                     | B2      | Sin cambios   |
-| `engine/tests/test_models.py`                  | B2      | Sin cambios   |
-| `engine/tests/test_sanitizer.py`               | B2      | Sin cambios   |
-| `engine/tests/test_orchestrator.py`            | B4      | Sin cambios   |
-| `engine/tests/test_orchestrator_output.py`     | B4      | Sin cambios   |
-| `engine/tests/test_github_handshake.py`        | B3      | Sin cambios   |
-| `engine/tests/test_resend_handshake.py`        | B3      | Sin cambios   |
-| `engine/tests/test_upstash_handshake.py`       | B3      | Sin cambios   |
-| `engine/tests/test_supabase_handshake.py`      | B3      | Sin cambios   |
-| `engine/tests/test_database.py`                | B4      | Sin cambios   |
+**Tablas creadas en `20260409000001_block_1_2.sql`**:
+- `system_configuration`: Singleton (CHECK id=1, PK id), columnas admin_uuid, umbral_alerta, kill_switch_active. Seed: INSERT ON CONFLICT DO NOTHING.
+- `draws`: 8 columnas, CHECKs nombrados para rangos de bolas y superbalota, indice unico `idx_draws_date_type_unique`.
+- `manual_verification_queue`: 10 columnas, indices parciales para cola de doble entrada.
+- `system_logs`: BIGSERIAL, metadata JSONB, 3 indices de consulta rapida.
+
+**Funciones y Triggers creados**:
+- `fn_validate_ball_array(int[], int, int, int)`: IMMUTABLE, RETURNS BOOLEAN. Valida rango, duplicados y cardinalidad.
+- `fn_prevent_singleton_delete()`: RETURNS TRIGGER, emite EXCEPTION si se intenta DELETE sobre `system_configuration`.
+- `tg_prevent_singleton_delete`: BEFORE DELETE FOR EACH STATEMENT sobre `system_configuration`.
+
+**Orden canonico de la migracion (6 bloques)**:
+1. Extensions — 2. Functions (IMMUTABLE antes de tablas) — 3. Tables — 4. Triggers — 5. Indexes — 6. Seed
+
+### Correcciones de Infraestructura del Bloque 2
+
+| Hallazgo | Descripcion                                                                 | Resolucion                                          |
+| :------- | :-------------------------------------------------------------------------- | :-------------------------------------------------- |
+| REF-01   | 4 ALTER TABLE redundantes en draft inicial de migracion                     | Eliminados en fase REFACTOR; atributos integrados en CREATE TABLE |
+| REF-02   | COMMENT duplicado sobre `system_configuration`                              | Consolidado en una sola declaracion                 |
+| REF-03   | CHECK Singleton sin nombre explicito en draft inicial                       | Renombrado a `chk_singleton_id` para trazabilidad forense |
 
 ### Estado del Repositorio al Cierre de Sesion
 
-**IMPORTANTE**: Hay cambios sin commitear que corresponden al cierre de etapa mas los artefactos del Bloque 5. El `devops-integrator` debe commitear TODO antes de abrir el PR.
+Rama activa: `feat/f1_e1_setup_supabase_ddl`.
 
-Archivos nuevos sin commitear (Bloque 5 + Cierre):
-- `.github/workflows/f1_1.0_env_validation.yml`
-- `engine/scripts/provision_secrets.sh`
-- `docs/f1_1.0/ops/secrets_checklist.md`
-- `docs/f1_1.0/audit/security/ci_cd_security_cert.md`
-- `engine/tests/test_failure_injection.py`
-- `docs/f1_1.0/audit/pipeline/backend/tsk_20_integration_cert.md`
-- `docs/f1_1.0/audit/pipeline/stage/tsk_21_stage_audit_cert.md`
-- `docs/executives/f1_1.0_executive.md`
-
-Archivos modificados sin commitear:
-- `engine/src/check_env.py` (refactorizado en TSK-19.1)
-- `.env.example` (VUL-03 remediado en TSK-18-CERT)
-- `docs/f1_1.0/f1_1.0_task.md` (todos los checkboxes de Bloques 1-5 y Cierre marcados [x])
+Archivos nuevos sin commitear (pendientes de commit):
+- `supabase/tests/006_singleton_constraint.sql`
+- `supabase/tests/007_singleton_delete_block.sql`
+- `supabase/tests/008_seed_admin_constants.sql`
+- `supabase/tests/009_draws_array_constraints.sql`
+- `supabase/tests/010_fn_validate_ball_array.sql`
+- `supabase/migrations/20260409000001_block_1_2.sql`
+- `docs/f1_1.1/audit/pipeline/cert_block2_trazabilidad_TSK-07.1.md`
+- `docs/f1_1.1/audit/pipeline/cert_block2_ghostcode_TSK-07.2.md`
+- `docs/f1_1.1/f1_1.1_task.md` (actualizado con evidencias Bloque 2)
+- `docs/lessons/lessons-learned.md` (actualizado al cierre de sesion)
 
 ---
 
@@ -181,87 +132,64 @@ Archivos modificados sin commitear:
 ### Working Set Actual
 
 ```
-engine/
-  src/
-    __init__.py          (creado B1)
-    utils.py             (creado B1 — TSK-03 DONE)
-    models.py            (creado B2 — TSK-05 DONE)
-    sanitizer.py         (creado B2 — TSK-06 DONE)
-    check_env.py         (refactorizado B5 TSK-19.1 — helpers _http_get_with_retry y _run_and_log_check, fix table_suffix, bug fix latency_ms)
-  scripts/
-    provision_secrets.sh (creado B5 — script de provisionamiento de secretos GHA)
+supabase/
+  config.toml                                    (creado B0/1 — CLI v2.89.0 compatible)
+  migrations/
+    20260409000001_block_1_2.sql                 (creado B2 — schema core + singleton)
   tests/
-    __init__.py          (creado B1)
-    conftest.py          (actualizado B2)
-    test_models.py       (creado B2 — 15 tests GREEN)
-    test_sanitizer.py    (creado B2 — 10 tests GREEN)
-    test_orchestrator.py (modificado B4 — 12 tests GREEN)
-    test_orchestrator_output.py (modificado B4 — 6 tests GREEN)
-    test_github_handshake.py    (creado B3 — 8 tests GREEN)
-    test_resend_handshake.py    (creado B3 — 8 tests GREEN)
-    test_upstash_handshake.py   (creado B3 — 8 tests GREEN)
-    test_supabase_handshake.py  (creado B3 — 12 tests GREEN)
-    test_database.py            (creado B4 — 15 tests GREEN)
-    test_failure_injection.py   (creado B5 — 11 tests GREEN)
-  requirements.txt       (creado B1 — hashes SHA256)
-  .venv/                 (creado B1 — entorno aislado)
+    001_environment_extensions.sql               (creado B0/1 — 3 assertions pgTap)
+    002_postgres_version.sql                     (creado B0/1 — 2 assertions pgTap)
+    003_immutable_functions.sql                  (creado B0/1 — 4 assertions pgTap)
+    004_pgtap_connectivity.sql                   (creado B0/1 — 3 assertions canary)
+    005_search_path_restrictive.sql              (creado B0/1 — 8 assertions RED)
+    006_singleton_constraint.sql                 (creado B2 — 4 assertions GREEN)
+    007_singleton_delete_block.sql               (creado B2 — 4 assertions GREEN)
+    008_seed_admin_constants.sql                 (creado B2 — 5 assertions GREEN)
+    009_draws_array_constraints.sql              (creado B2 — 6 assertions GREEN)
+    010_fn_validate_ball_array.sql               (creado B2 — 7 assertions GREEN)
 
-.github/
-  workflows/
-    f1_1.0_env_validation.yml   (creado B5 — workflow GHA)
-
-.env.example             (modificado B5 — placeholder GITHUB_TOKEN corregido VUL-03)
-conftest.py              (creado B2 — raiz del proyecto, sys.path fix)
-
-docs/f1_1.0/
-  f1_1.0_task.md         (actualizado — B1+B2+B3+B4+B5 completados; Cierre de Etapa pendiente)
-  ops/
-    secrets_checklist.md (creado B5 — guia operacional secretos GHA)
+docs/f1_1.1/
+  f1_1.1_prd.md                                  (AUTORIZADO)
+  f1_1.1_spec.md                                 (AUTORIZADO — v1.2.3-Gold)
+  f1_1.1_plan.md                                 (AUTORIZADO — v1.5.0)
+  f1_1.1_task.md                                 (actualizado — Bloque 2 completo [x])
   audit/
-    security/
-      ci_cd_security_cert.md (creado B5 — certificado seguridad CI/CD)
+    sdd/
+      prd_token.md                               (AUTORIZADO)
+      spec_token.md                              (AUTORIZADO)
+      plan_i_token.md                            (AUTORIZADO)
+      task_token.md                              (AUTORIZADO)
+    pipeline/
+      gate0_certification_token.md              (GATE0-f1-1.1-CERT-001 — APTO)
+      cert_block2_trazabilidad_TSK-07.1.md      (CERT-B2-f1-1.1-TRAZ-001)
+      cert_block2_ghostcode_TSK-07.2.md         (CERT-B2-f1-1.1-GHOST-001)
 ```
 
-### Hallazgos INFO del TSK-19.2-REFACTOR (no bloqueantes, sin tarea de resolucion activa)
+### Tablas Pendientes de Crear (Bloque 3)
 
-| ID      | Descripcion                                                                                         |
-| :------ | :-------------------------------------------------------------------------------------------------- |
-| INFO-A  | `RunReport.run_id` no valida UUID v4 — `@field_validator` con regex `^[0-9a-f]{8}-...-4...$` diferido |
-| INFO-B  | `check_pg_extensions` Fase 3 sin fallback `42P01` — excepcion no capturada si esquema `cron`/`net` no es accesible |
-| INFO-C  | Tests `D-1` (fetchone()=None en check_ddl_capabilities) y `D-3` (count==0 en check_persistence_cycle) ausentes |
+Las siguientes tablas definidas en la SPEC aun no tienen migracion DDL y son prerequisito del Bloque 3:
+- `strategies_metadata` — Definicion y versionamiento de algoritmos
+- `projections` — Pool de 1,802 combinaciones por sorteo
+- `performance` — Calculo de aciertos y puntajes ponderados
+- `sync_locks` — Semaforo atomico para el Engine
 
 ### Bloqueadores Criticos
 
-**Ninguno.** La Etapa 1.0 esta formalmente CERRADA con token `EXEC-CLOSE-F1_1.0-20260408`. Solo resta la tarea operativa TSK-22.3 (commit + PR) que no bloquea el cierre formal.
+**Ninguno.** El Bloque 2 esta completado con 26 assertions en VERDE y 2 tokens de certificacion emitidos (CERT-B2-f1-1.1-TRAZ-001 y CERT-B2-f1-1.1-GHOST-001). Las tablas core del schema (system_configuration, draws, manual_verification_queue, system_logs) y la funcion fn_validate_ball_array estan definidas y testeadas.
+
+**Prerequisito de commit antes de iniciar Bloque 3**: El `devops-integrator` debe commitear todos los artefactos del Bloque 2 en `feat/f1_e1_setup_supabase_ddl` antes de iniciar TSK-F1_1.1-08.1-RED, para establecer un baseline auditado del schema core.
 
 ### Proximo Paso Prioritario (Next Step Atomico)
 
-**Tarea unica pendiente**: TSK-F1_1.0-22.3-CLOSURE — Commit final y apertura de PR  
-**Agente Responsable**: `devops-integrator`
+**Tarea inmediata**: `TSK-F1_1.1-08.1-RED` — Test pgTap: Idempotencia en insercion de proyecciones duplicadas  
+**Agente Responsable**: `backend-tester`  
+**Contexto**: Primera tarea del Bloque 3 (Motor de Performance — TDD). El `backend-tester` debe escribir tests pgTap que fallen porque las tablas `strategies_metadata` y `projections` aun no existen en las migraciones.
 
-```bash
-# 1. Commitear todo el trabajo acumulado (Bloque 5 + artefactos de Cierre)
-git add .github/workflows/f1_1.0_env_validation.yml \
-        engine/scripts/provision_secrets.sh \
-        engine/tests/test_failure_injection.py \
-        engine/src/check_env.py \
-        .env.example \
-        docs/f1_1.0/ops/secrets_checklist.md \
-        docs/f1_1.0/audit/security/ci_cd_security_cert.md \
-        docs/f1_1.0/audit/pipeline/backend/tsk_20_integration_cert.md \
-        docs/f1_1.0/audit/pipeline/stage/tsk_21_stage_audit_cert.md \
-        docs/executives/f1_1.0_executive.md \
-        docs/f1_1.0/f1_1.0_task.md \
-        docs/lessons/lessons-learned.md \
-        PROJECT_handoff.md
-git commit -m "feat: cierre formal Etapa 1.0 — auditoria, executive summary y persistencia de estado"
-
-# 2. Abrir PR de feat/f1_1.0_env_validation hacia dev
-gh pr create --base dev --title "feat: Etapa 1.0 — Validacion de Entorno (cierre completo)" \
-  --body "Cierre formal de la Etapa 1.0. 105/105 tests PASSED, cobertura 94%, 0 vulnerabilidades abiertas. Token: EXEC-CLOSE-F1_1.0-20260408"
-```
-
-**Siguiente Etapa habilitada**: Etapa 1.1 — Setup de Supabase y DDL. Requiere leer `docs/f1_1.1/` (PRD/SPEC/PLAN) y verificar tokens SDD en `docs/f1_1.1/audit/sdd/`.
+**Accion concreta para el proximo agente**:
+1. Leer `docs/f1_1.1/f1_1.1_spec.md` seccion de tablas `strategies_metadata` y `projections` (contratos de columnas, constraints y logica de idempotencia).
+2. Leer `docs/f1_1.1/f1_1.1_task.md` para identificar las assertions exactas requeridas en TSK-08.1-RED y las tareas subsiguientes del Bloque 3.
+3. Crear `supabase/tests/011_projections_idempotence.sql` (o el nombre definido en TASK) con assertions pgTap que fallen — fase RED genuina (las tablas aun no existen).
+4. Ejecutar `supabase db reset` para confirmar que los tests fallan correctamente (26 anteriores en VERDE, los nuevos en ROJO) antes de proceder al GREEN del Bloque 3.
 
 ---
 
@@ -406,4 +334,36 @@ gh pr create --base dev --title "feat: Etapa 1.0 — Validacion de Entorno (cier
 
 5. **Bug fix: `latency_ms=0.0` violaba la restriccion `gt=0` del modelo `ServiceResult`**: En el path de error de `_http_get_with_retry`, el return de fallo de red usaba `latency_ms=0.0`. La restriccion `Field(gt=0)` del modelo `ServiceResult` rechaza valores de cero. El fix aplica el patron canonico `max((end - start) * 1000, 0.001)` en el path de error, consistente con todos los demas checks del modulo.
 
-6. **Hallazgos INFO del TSK-19.2 no resueltos en esta sesion**: El backend-reviewer identifico 3 hallazgos de tipo INFO (no bloqueantes): (a) ausencia de `@field_validator` UUID v4 en `RunReport`, (b) sin fallback `42P01` en `check_pg_extensions` Fase 3, (c) tests D-1 y D-3 ausentes. Estos hallazgos no tienen tarea de resolucion asignada — el equipo acepta conscientemente que son mejoras de calidad diferibles al backlog general de la Fase 1, no deuda critica para el cierre de la Etapa 1.0.
+---
+
+### [2026-04-09] — Cierre Bloque 0/1 — Validacion & Scaffolding Supabase (Etapa 1.1)
+
+**Contexto**: Primera sesion de desarrollo activo de la Etapa 1.1. Bloque 0/1 completado en una sola sesion: 5 tests pgTap de entorno (20 assertions), Gate 0 certificado APTO, `supabase db reset` exitoso. El stack local Supabase quedo operativo. 3 hallazgos criticos de infraestructura resueltos durante TSK-03.3.
+
+**Decisiones Tomadas**:
+
+1. **`extra_search_path` y `cron.max_running_jobs` migrados de `config.toml` a DDL SQL**: El CLI v2.89.0 no soporta estas directivas en `config.toml`. La configuracion correcta del `search_path` de sesion debe hacerse via `ALTER ROLE authenticator SET search_path = extensions, public;` en las migraciones del Bloque 2. Esta es la distincion "configuracion de cliente vs configuracion de servidor" que aplica a toda la Etapa 1.1.
+
+2. **Gate 0 como barrera formal entre scaffolding y DDL**: La certificacion Gate 0 (GATE0-f1-1.1-CERT-001) fue emitida antes de iniciar cualquier tarea de migracion, actuando como contrato de calidad del entorno. Ninguna migracion DDL debe crearse sobre un entorno sin Gate 0 certificado.
+
+3. **`005_search_path_restrictive.sql` en estado RED intencional**: El test falla en el reset actual porque la migracion DDL que configura el `search_path` (via ALTER ROLE) aun no existe. Este es el comportamiento correcto de TDD para infraestructura de BD: el test documenta el estado deseado futuro. El proximo agente no debe modificar las assertions para hacerlas pasar; debe implementar la migracion que las satisfaga.
+
+---
+
+### [2026-04-09] — Cierre Bloque 2 — Schema Core & Singleton (Etapa 1.1)
+
+**Contexto**: Segunda sesion de desarrollo activo de la Etapa 1.1. Ciclo TDD completo RED -> GREEN -> REFACTOR -> CERT ejecutado en una sola sesion. 5 tests pgTap escritos (26 assertions), migracion DDL `20260409000001_block_1_2.sql` creada y refactorizada, 2 tokens de certificacion emitidos.
+
+**Decisiones Tomadas**:
+
+1. **Trigger BEFORE DELETE FOR EACH STATEMENT (no FOR EACH ROW) para el Singleton**: El trigger `tg_prevent_singleton_delete` usa `FOR EACH STATEMENT` en lugar de `FOR EACH ROW`. Esta decision garantiza que un `DELETE FROM system_configuration` (sin WHERE) dispara el trigger exactamente una vez, independientemente del numero de filas afectadas. `FOR EACH ROW` habria requerido que hubiera al menos una fila para dispararse, lo que crea una ventana de vulnerabilidad cuando la tabla esta vacia.
+
+2. **`fn_validate_ball_array` como funcion IMMUTABLE con 3 Reglas de Oro**: La funcion valida en un solo paso rango de valores, ausencia de duplicados y cardinalidad exacta del array. Se declara IMMUTABLE porque su resultado depende exclusivamente de los parametros de entrada (sin acceso a tablas ni estado externo). Esto permite al planificador de PostgreSQL usar el resultado en cache para llamadas con los mismos argumentos, optimizando CHECKs repetitivos en inserciones masivas de proyecciones.
+
+3. **Orden canonico de migracion en 6 bloques secuenciales**: Extensions -> Functions (IMMUTABLE antes de tablas, para permitir referencias en CHECKs) -> Tables -> Triggers -> Indexes -> Seed. Este orden elimina dependencias circulares y garantiza que las funciones usadas en CHECKs de columnas existen antes de que se ejecute el CREATE TABLE. El orden debe mantenerse en todas las migraciones futuras de la Etapa 1.1.
+
+4. **`idx_draws_date_type_unique` como indice unico (no UNIQUE constraint en tabla)**: La restriccion de unicidad sobre `(draw_date, draw_type)` en `draws` se implemento como `CREATE UNIQUE INDEX` en lugar de `UNIQUE` inline en el CREATE TABLE. Esta decision permite adjuntar un nombre explicito al indice para diagnostico forense y facilita su eventual suspension temporal durante carga masiva de datos historicos (Fase 2) sin alterar el DDL de la tabla.
+
+5. **Seed con `INSERT ON CONFLICT DO NOTHING` para idempotencia del Singleton**: El registro inicial de `system_configuration` (id=1) usa `ON CONFLICT DO NOTHING` para garantizar que multiples ejecuciones de `supabase db reset` no generen error de PK duplicada. Esta es la unica excepcion al principio de "seed = datos fijos"; el admin_uuid se genera con `gen_random_uuid()` en el primer reset y se preserva en resets subsiguientes gracias al ON CONFLICT.
+
+6. **Eliminacion de 4 ALTER TABLE redundantes en REFACTOR**: El draft inicial de la migracion usaba ALTER TABLE post-creacion para agregar CHECKs nombrados a tablas ya definidas. En la fase REFACTOR, todos los CHECKs fueron integrados directamente en el CREATE TABLE original. Esta decision reduce el numero de statements DDL, elimina estados intermedios invalidos del schema y hace la migracion atomicamente correcta desde el primer statement.
