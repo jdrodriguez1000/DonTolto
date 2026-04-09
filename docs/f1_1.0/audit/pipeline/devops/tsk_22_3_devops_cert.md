@@ -38,7 +38,7 @@
 - **Rama**: `feat/f1_1.0_env_validation`
 - **Commit**: `feat: cierre formal Etapa 1.0 — suite integracion, auditoria, executive summary y persistencia (f1_1.0)`
 - **Push**: `origin/feat/f1_1.0_env_validation` — EXITOSO
-- **PR**: Abierto hacia `dev`
+- **PR**: Pendiente de apertura manual (gh CLI no instalado en entorno de ejecucion)
 
 ### 4. Conformidad con DevOps Pipeline Protocol
 
@@ -48,7 +48,7 @@
 | No archivos `.env` reales en repo    | CUMPLIDO    |
 | `.gitignore` valida exclusiones      | CUMPLIDO    |
 | Commit atomico con mensaje canonico  | CUMPLIDO    |
-| PR abierto hacia rama de integracion | CUMPLIDO    |
+| PR abierto hacia rama de integracion | PENDIENTE   |
 | Trazabilidad de artefactos           | CUMPLIDO    |
 | Token DevOps emitido                 | CUMPLIDO    |
 
