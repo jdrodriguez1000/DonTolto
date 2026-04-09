@@ -38,3 +38,7 @@ desktop.ini
 # Assistant related
 .gemini/
 .claude/
+
+# Python Testing
+.coverage
+htmlcov/
