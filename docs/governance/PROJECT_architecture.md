@@ -13,7 +13,7 @@ El sistema **DonTolto** no es un monolito tradicional ni una red de microservici
 ### Características Principales:
 - **Desacoplamiento Total**: El **Motor de Cálculo (Engine)** es efímero (GitHub Actions) y vive separado del **Dashboard (Next.js)**, comunicándose exclusivamente a través de la **Capa de Datos (Supabase)**.
 - **Event-Driven & Orchestrated**: La lógica se dispara mediante eventos (Cron schedules o Manual Dispatches) orquestados por **Supabase Edge Functions**.
-- **Stack Políglota**: Se utiliza cada tecnología para su fuerte: **Python 3.12+ / NumPy** para simulación de 1M escenarios y **Next.js 16+ / TypeScript 6+ / Tailwind 4** para la gestión y visualización de datos.
+- **Stack Políglota**: Se utiliza cada tecnología para su fuerte: **Python 3.12+ / Pandas** para el procesamiento de estrategias y **Next.js 16+ / TypeScript 6+ / Tailwind 4** para la visualización de datos. El motor es ligero y optimizado para ejecuciones rápidas (< 5 min).
 
 ---
 
@@ -23,7 +23,7 @@ El sistema se divide en tres capas fundamentales, desacoplando la computación i
 
 | Capa | Responsabilidad | Stack Técnico |
 | :--- | :--- | :--- |
-| **Motor (Logic Engine)** | Scraping, Simulación (1M) y Validación de Esquemas. | Python 3.12+, Pandera/Pydantic, GitHub Actions, NumPy. |
+| **Motor (Logic Engine)** | Scraping, Generación de Estrategias y Validación de Esquemas. | Python 3.12+, Pandera/Pydantic, GitHub Actions. |
 | **Datos (Persistence)** | Almacenamiento, Benchmarking SQL, Cleanup (Cron) y Realtime. | Supabase, pg_cron, pg_net, PostgREST, Redis. |
 | **Frontend (UI)** | Dashboard Reactivo, Carga Manual y Monitoreo Realtime. | Next.js 16+, Supabase Realtime, Tailwind 4. |
 | **Integración (Trigger)** | Disparo de motor y automatización de métricas. | Supabase Edge Functions / DB Triggers -> GitHub API. |
@@ -46,11 +46,10 @@ DonTolto/
 ├── engine/ (Python 3.12+)
 │   ├── src/
 │   │   ├── scraper/            # Lógica de Scraping (Baloto/Revancha)
-│   │   ├── simulator/          # Lógica NumPy 1M escenarios (Memoria Pura)
-│   │   ├── generator/          # Generación de Estrategias (Elite/Real)
+│   │   ├── generator/          # Generación de Estrategias (Élite/Real)
 │   │   └── main.py             # Orquestador (Entrypoint para GHA)
 │   ├── tests/                  # Pruebas unitarias/integración del motor
-│   ├── requirements.txt        # Dependencias (NumPy, Pandas, Requests)
+│   ├── requirements.txt        # Dependencias (Pandas, Requests, Pandera)
 │   └── .env.example            # Variables de entorno requeridas
 ├── supabase/ (Postgres)
 │   ├── migrations/             # SQL DDL (Draws, Projections, Performance)
@@ -112,7 +111,8 @@ sequenceDiagram
     - **Cleanup**: Los logs de nivel `info` en `system_logs` y entradas verificadas en `manual_verification_queue` se purgan automáticamente tras 90 días mediante un DB Cron.
 - **Compute Efficiency (GHA Optimization)**:
     - Uso de **Docker-based Runners** o **GitHub Actions Cache** para dependencias NumPy/Pandas.
-    - **Budget**: Tiempo objetivo de ejecución < 12 minutos (excluyendo el timeout de 25m de fail-safe).
+    - **Budget**: Tiempo objetivo de ejecución < 5 minutos.
+- **Data Volume**: Generación de **428 registros** por ciclo (214 Baloto / 214 Revancha).
 
 ---
 
@@ -216,7 +216,7 @@ CREATE TABLE sync_locks (
     is_locked BOOLEAN DEFAULT FALSE,
     last_locked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     expires_at TIMESTAMP WITH TIME ZONE,
-    locked_by VARCHAR(100)
+    run_id UUID NOT NULL -- Identificación obligatoria por run_id [REQ-12]
 );
 
 -- 5. Logs de Sistema (Observabilidad y Auditoría)
@@ -440,8 +440,12 @@ Para asegurar la operatividad de los 3 dominios desacoplados, se requieren los s
 ## 🛡️ Seguridad y Autenticación del Bot
 
 ### Flujo de Autenticación de GitHub Actions (Engine)
-- **Auth de Bot**: El motor de GHA utilizará la `SUPABASE_SERVICE_ROLE_KEY` (Gestionada en GHA Secrets).
-- **Bypass de RLS**: Dado que el motor realiza operaciones masivas de inserción y cálculo (3,604 registros por sorteo), el uso de `service_role` es **intencional** para omitir las políticas de RLS y maximizar el rendimiento.
+- **Auth de Bot**: El motor de GHA utilizará la `SUPABASE_SERVICE_ROLE_KEY`.
+- **Bypass de RLS**: Dado que el motor realiza inserción masiva (**428 registros** por sorteo), el uso de `service_role` es **intencional**.
+
+---
+
+> **Control de Cambio:** Este archivo fue modificado por CC_001 (2026-04-09).
 - **Blindaje UI**: Los usuarios (Single Admin) seguirán sujetos a RLS mediante su `ADMIN_UUID`, asegurando que nadie más pueda ver o inyectar datos falsos desde la interfaz pública.
 - **Edge Function Safety**: El trigger de disparo manual implementará un **Rate Limit persistido en Redis (Upstash)** de 1 ejecución cada 10 minutos para evitar abuso de API y minutos de GHA.
 - **Vault Secrets**: Los tokens sensibles se almacenarán en `vault.secrets` con los siguientes nombres clave:
@@ -477,3 +481,9 @@ CREATE POLICY "Admin Strict Access" ON performance ALL USING (auth.uid() = 'ADMI
 11. **Versionado Científico**: Integrado `strategy_version` para seguimiento de evolución de algoritmos.
 12. **Infraestructura Requerida**: Especificadas extensiones `pg_cron` y `uuid-ossp` como pre-requisitos.
 13. **Reactividad Nativa**: Implementada notificación vía **Supabase Realtime** para actualización automática del Dashboard.
+14. **Resolución de Empates**: En caso de igualdad de puntaje en el ranking, prevalecerá la estrategia con el `created_at` más antiguo (**FIFO**) para premiar la eficiencia de cálculo.
+15. **Continuidad Operativa**: Ante la ausencia de validación manual en 24h, el motor operará en modo "Fallback" utilizando los últimos rankings válidos, registrando una Deuda Técnica Crítica en el Dashboard.
+
+---
+
+> **Control de Cambio:** Este archivo fue modificado por CC_002 (2026-04-09) para sincronizar volumen (428), Lock TTL (60m) y definir lógica de desempate.

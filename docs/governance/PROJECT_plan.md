@@ -50,20 +50,23 @@ Este plan estructura el desarrollo de **DonTolto** en 5 fases (0-4), priorizando
 | **2.5** | **Blindaje de Discrepancia** | Lógica de prioridad (Manual > Scraper) para resolver datos contradictorios. | Coder, Auditor |
 | **2.6** | **Throttling & Checkpoint** | Motor de scraping con reintentos inteligentes y persistencia de avance. | Coder |
 
-### Fase 3: Inteligencia y Simulación (The Core Brain)
-*Objetivo: Ejecutar el estrés estadístico de 1M de escenarios.*
+### Fase 3: Inteligencia y Generación (The Simplified Brain)
+*Objetivo: Ejecutar la lógica de selección boutique de 30 juegos por estrategia.*
 
 | Etapa | Descripción | Entregable Principal | Agentes |
 | :--- | :--- | :--- | :--- |
-| **3.0** | **Perfilado de Recursos** | Benchmarking de memoria para 1M escenarios en GHA Runner. | Auditor |
-| **3.1** | **Simulador NumPy 1M** | Módulo de simulación optimizado con vectorización pura. | Coder, Tester |
-| **3.2** | **Generador Elite/Real** | Lógica de selección con **Interceptor de Timeout** en 23m. | Coder, Auditor |
+| **3.0** | **Diseño de Algoritmos** | Lógica de selección Élite (Frecuencia, Sinergia, Gap). | Coder |
+| **3.1** | **Generador Multiestrategia** | Módulo Python para generar los 30 juegos x 7 tipos. | Coder, Tester |
+| **3.2** | **Selector de Estrategia Real** | Lógica de herencia del top performer de la Élite. | Coder, Auditor |
 | **3.3** | **Backtesting Nativo DB** | Triggers SQL para cálculo automático de performance. | Coder |
-| **3.4** | **Calibración Masiva (Batch)** | Procesamiento fragmentado (6 meses por run) de 5 años para KPIs. | Coder, Auditor |
-| **3.5** | **Validación de Fail-Safe** | Test de interceptor de 23m simulando retardo para herencia Elite. | Auditor, Tester |
-| **3.6** | **Engine Lock (Docker)** | Containerización del Motor NumPy para paridad absoluta Local-GHA. | Coder |
-| **3.7** | **Criptografía Forense** | Firmado digital HMAC de proyecciones para auditoría de inalterabilidad. | Coder, Auditor |
+| **3.4** | **Calibración Histórica** | Procesamiento de 5 años para KPIs iniciales. | Coder, Auditor |
+| **3.5** | **Optimización de Costos** | Validación de ejecución del motor (< 5 min). | Auditor |
+| **3.6** | **Engine Lock (Docker)** | Containerización del Motor para paridad Local-GHA. | Coder |
+| **3.7** | **Criptografía Forense** | Firmado digital HMAC de proyecciones. | Coder, Auditor |
 
+---
+
+> **Control de Cambio:** Este archivo fue modificado por CC_001 (2026-04-09).
 ### Fase 4: Dashboard y Observabilidad (UI Premium)
 *Objetivo: Visualizar el éxito y monitorear la salud del sistema.*
 

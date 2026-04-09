@@ -39,7 +39,8 @@ Es OBLIGATORIO iniciar un Control de Cambios en los siguientes casos:
 
 | ID | Fecha | Título / Descripción Breve | Estado | Documentos Afectados |
 | --- | --- | --- | --- | --- |
-| - | - | *No hay cambios registrados* | - | - |
+| CC_001 | 2026-04-09 | Reducción de Escala y Simplificación | ✅ Aprobado | Scope, Architecture, Plan, PRD f1_1.1 |
+| CC_002 | 2026-04-09 | Sincronización de Gobernanza y Refinamiento Lean Scale | ✅ Aprobado | Scope, Architecture, PRD f1_1.1 |
 
 ---
 
