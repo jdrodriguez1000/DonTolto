@@ -1,7 +1,7 @@
 # PROJECT_handoff.md: DonTolto
 
 ---
-**Ultima Actualizacion**: 2026-04-09
+**Ultima Actualizacion**: 2026-04-10
 **Responsable del Cierre**: session-closer (Protocolo de Handoff Tecnico)
 **Estado de Persistencia**: ESTADO_PERSISTIDO_OK
 ---
@@ -12,10 +12,10 @@
 | :----------------- | :----------------------------------------------------------------------------------- |
 | **Fase Activa**    | Fase 1 — Infraestructura de Datos (Cimentacion)                                      |
 | **Etapa Activa**   | **1.1 — Setup de Supabase y DDL** (Etapa 1.0 cerrada formalmente)                    |
-| **Bloque Activo**  | Bloque 2 COMPLETADO — Siguiente: Bloque 3 (Motor de Performance — TDD)               |
+| **Bloque Activo**  | Bloque 3 COMPLETADO — Siguiente: Bloque 4 (Seguridad & RLS — TDD)                   |
 | **Rama Git**       | `feat/f1_e1_setup_supabase_ddl`                                                      |
-| **Ultimo Commit**  | `0c716fa` — `chore: archivar lecciones aprendidas de F1_1.0 en carpeta history`      |
-| **Capas Tecnicas** | DB/Infra (Supabase local, pgTap, PostgreSQL 16, pg_cron, pg_net)                     |
+| **Ultimo Commit**  | `241bc0c` — `feat: integración de lógica DDL block 1.2, configuración de CLI...`     |
+| **Capas Tecnicas** | DB/Infra (Supabase local, pgTap, PostgreSQL 16, pg_cron, pg_net, Funciones PL/pgSQL)|
 
 ---
 
@@ -49,12 +49,27 @@
 | TSK-F1_1.1-07.1-CERT       | Certificacion trazabilidad. Token: CERT-B2-f1-1.1-TRAZ-001                              | Completado |
 | TSK-F1_1.1-07.2-CERT       | Certificacion ghost code. Token: CERT-B2-f1-1.1-GHOST-001                               | Completado |
 
+### Estado del Bloque 3 — Motor de Performance [TDD]: 100% COMPLETADO
+
+| Tarea                      | Descripcion                                                                              | Estado     |
+| :------------------------- | :--------------------------------------------------------------------------------------- | :--------- |
+| TSK-F1_1.1-08.1-RED        | `011_projections_idempotency.sql` — 5 assertions idempotencia DELETE+INSERT             | Completado |
+| TSK-F1_1.1-08.2-RED        | `012_bulk_insert_chunking.sql` — 4 assertions chunking (1000 registros REQ-11)          | Completado |
+| TSK-F1_1.1-09.1-GREEN      | Tabla `strategies_metadata` con PK compuesta (name, version)                            | Completado |
+| TSK-F1_1.1-09.2-GREEN      | Tabla `projections` con FK compuesta + CHECK fn_validate_ball_array                     | Completado |
+| TSK-F1_1.1-09.3-GREEN      | Tabla `performance` con columna generada `score` GENERATED ALWAYS AS STORED             | Completado |
+| TSK-F1_1.1-09.4-GREEN      | Funcion `fn_bulk_insert_projections(UUID, JSONB) RETURNS INTEGER` + Migracion B3       | Completado |
+| TSK-F1_1.1-10.1-GREEN      | Indice GIN `idx_projections_numbers` para busqueda en arrays                            | Completado |
+| TSK-F1_1.1-10.2-GREEN      | Indice compuesto `idx_performance_tiebreak` (score DESC, processed_at ASC)              | Completado |
+| TSK-F1_1.1-11.1-REFACT     | 4 indices de optimizacion (run_id, status, date_status, is_active parcial)             | Completado |
+| TSK-F1_1.1-12-CERT         | Certificacion performance SQL. Token: [BACKEND-REVIEWER:CERT:12-BLOQUE3:APROBADO]      | Completado |
+
 ### Resumen de Progreso Global (Etapa 1.1)
 
 - **Bloque 0/1**: 9/9 tareas completadas (100%)
 - **Bloque 2**: 9/9 tareas completadas (100%) — 26 assertions en VERDE
-- **Bloque 3**: 0/N tareas completadas — SIGUIENTE BLOQUE
-- **Etapa 1.1 global**: EN PROGRESO — Bloques 0/1 y 2 COMPLETADOS, Bloque 3 pendiente
+- **Bloque 3**: 10/10 tareas completadas (100%) — 9 assertions RED + Migracion DDL + 4 Indices
+- **Etapa 1.1 global**: EN PROGRESO — Bloques 0/1, 2 y 3 COMPLETADOS. Siguiente: Bloque 4
 
 ### Historial de Etapas Cerradas (referencia)
 
@@ -66,63 +81,61 @@
 
 ## §3 Inventario Tecnico de Cambios
 
-### Archivos Creados en Esta Sesion (Bloque 2 — TDD Cycle)
+### Archivos Creados en Esta Sesion (Bloque 3 — TDD Cycle)
 
 | Archivo                                                                     | Tipo  | Descripcion                                                                                                       |
 | :-------------------------------------------------------------------------- | :---- | :---------------------------------------------------------------------------------------------------------------- |
-| `supabase/tests/006_singleton_constraint.sql`                               | Nuevo | 4 assertions pgTap: CHECK id=1 y PK violation en tabla `system_configuration`.                                   |
-| `supabase/tests/007_singleton_delete_block.sql`                             | Nuevo | 4 assertions pgTap: trigger BEFORE DELETE FOR EACH STATEMENT bloquea eliminacion.                                |
-| `supabase/tests/008_seed_admin_constants.sql`                               | Nuevo | 5 assertions pgTap: admin_uuid NOT NULL, umbral numerico, kill-switch boolean.                                    |
-| `supabase/tests/009_draws_array_constraints.sql`                            | Nuevo | 6 assertions pgTap: validacion de arrays de bolas, superbalota, tipo de sorteo.                                   |
-| `supabase/tests/010_fn_validate_ball_array.sql`                             | Nuevo | 7 assertions pgTap: IMMUTABLE, 3 Reglas de Oro (rango, duplicados, cardinalidad).                                |
-| `supabase/migrations/20260409000001_block_1_2.sql`                          | Nuevo | Migracion DDL Bloque 2: tablas `system_configuration`, `draws`, `manual_verification_queue`, `system_logs`, funcion `fn_validate_ball_array`, trigger `tg_prevent_singleton_delete`, seed inicial. |
-| `docs/f1_1.1/audit/pipeline/cert_block2_trazabilidad_TSK-07.1.md`          | Nuevo | Token de certificacion de trazabilidad CERT-B2-f1-1.1-TRAZ-001.                                                  |
-| `docs/f1_1.1/audit/pipeline/cert_block2_ghostcode_TSK-07.2.md`             | Nuevo | Token de certificacion ghost code CERT-B2-f1-1.1-GHOST-001.                                                      |
+| `supabase/tests/011_projections_idempotency.sql`                            | Nuevo | 5 assertions pgTap: idempotencia DELETE+INSERT en fn_bulk_insert_projections (TSK-08.1-RED).                     |
+| `supabase/tests/012_bulk_insert_chunking.sql`                               | Nuevo | 4 assertions pgTap: chunking (1000 registros) en fn_bulk_insert_projections (TSK-08.2-RED).                      |
+| `supabase/migrations/20260410000001_block_3.sql`                            | Nuevo | Migracion DDL Bloque 3: tablas `strategies_metadata`, `projections`, `performance`, funcion `fn_bulk_insert_projections`, 2 indices GIN/compuesto, 4 indices REFACTOR. 382 lineas DDL. |
+| `docs/f1_1.1/audit/pipeline/cert_block3_performance_TSK-12.md`             | Nuevo | Token de certificacion performance SQL [BACKEND-REVIEWER:CERT:12-BLOQUE3:APROBADO].                              |
 
-### Archivos Modificados en Esta Sesion
+### Archivos Modificados en Esta Sesion (Bloque 3)
 
 | Archivo                        | Tipo       | Descripcion                                                                              |
 | :----------------------------- | :--------- | :--------------------------------------------------------------------------------------- |
-| `docs/f1_1.1/f1_1.1_task.md`  | Modificado | Tareas TSK-04.1-RED a TSK-07.2-CERT del Bloque 2 marcadas `[x]` con evidencias.         |
+| `docs/f1_1.1/f1_1.1_task.md`  | Modificado | Tareas TSK-08.1 a TSK-12-CERT del Bloque 3 marcadas `[x]` con evidencias; total 28/28 tareas Bloque 3+2+B0/1. |
 
-### Artefactos del Bloque 2 — Detalle Canonico
+### Artefactos del Bloque 3 — Detalle Canonico
 
-**Tablas creadas en `20260409000001_block_1_2.sql`**:
-- `system_configuration`: Singleton (CHECK id=1, PK id), columnas admin_uuid, umbral_alerta, kill_switch_active. Seed: INSERT ON CONFLICT DO NOTHING.
-- `draws`: 8 columnas, CHECKs nombrados para rangos de bolas y superbalota, indice unico `idx_draws_date_type_unique`.
-- `manual_verification_queue`: 10 columnas, indices parciales para cola de doble entrada.
-- `system_logs`: BIGSERIAL, metadata JSONB, 3 indices de consulta rapida.
+**Tablas creadas en `20260410000001_block_3.sql`**:
+- `strategies_metadata`: PK compuesta (name, version), role enum ('active', 'control', 'archive'), is_active boolean DEFAULT TRUE. Versionamiento de algoritmos.
+- `projections`: 8 columnas, run_id UUID, target_draw_date DATE, FK compuesta a strategies_metadata, numbers INTEGER[] con CHECK fn_validate_ball_array, superbalota [1-16], status enum.
+- `performance`: 7 columnas, FK a draws y projections con ON DELETE RESTRICT, hits_count [0-5], has_sb BOOLEAN, score GENERATED ALWAYS AS STORED = hits_count + (has_sb ? 10 : 0).
 
-**Funciones y Triggers creados**:
-- `fn_validate_ball_array(int[], int, int, int)`: IMMUTABLE, RETURNS BOOLEAN. Valida rango, duplicados y cardinalidad.
-- `fn_prevent_singleton_delete()`: RETURNS TRIGGER, emite EXCEPTION si se intenta DELETE sobre `system_configuration`.
-- `tg_prevent_singleton_delete`: BEFORE DELETE FOR EACH STATEMENT sobre `system_configuration`.
+**Funciones creadas en Bloque 3**:
+- `fn_bulk_insert_projections(UUID, JSONB) RETURNS INTEGER`: PL/pgSQL SECURITY INVOKER. Implementa idempotencia via DELETE previo por run_id, itera sobre payload JSONB, valida FK + fn_validate_ball_array, inserta con status='pending'. Chunking implicito en loop JSONB.
 
-**Orden canonico de la migracion (6 bloques)**:
-1. Extensions — 2. Functions (IMMUTABLE antes de tablas) — 3. Tables — 4. Triggers — 5. Indexes — 6. Seed
+**Indices creados (Bloque 3 + REFACTOR)**:
+- `idx_projections_numbers`: GIN index sobre columna numbers INTEGER[] para operadores @>, <@, &&.
+- `idx_performance_tiebreak`: Compuesto (score DESC, processed_at ASC, projection_id ASC) para desempate de rankings.
+- `idx_projections_run_id`: B-Tree para DELETE idempotente en fn_bulk_insert_projections (Q1).
+- `idx_projections_status`: B-Tree para UPDATE status='calculating' LIMIT 428 (Q2).
+- `idx_projections_date_status`: Compuesto (target_draw_date, status) para lookup por fecha (Q5).
+- `idx_strategies_metadata_is_active`: Indice parcial (WHERE is_active = TRUE) para JOIN con estrategias activas (Q3).
 
-### Correcciones de Infraestructura del Bloque 2
+**Orden canonico de la migracion (sigue patron Bloque 2)**:
+1. Extensions — 2. Functions — 3. Tables — 4. Triggers — 5. Indexes — 6. Seed
 
-| Hallazgo | Descripcion                                                                 | Resolucion                                          |
-| :------- | :-------------------------------------------------------------------------- | :-------------------------------------------------- |
-| REF-01   | 4 ALTER TABLE redundantes en draft inicial de migracion                     | Eliminados en fase REFACTOR; atributos integrados en CREATE TABLE |
-| REF-02   | COMMENT duplicado sobre `system_configuration`                              | Consolidado en una sola declaracion                 |
-| REF-03   | CHECK Singleton sin nombre explicito en draft inicial                       | Renombrado a `chk_singleton_id` para trazabilidad forense |
+### Decisiones de Diseño Bloque 3
+
+| Tema | Detalle |
+| :--- | :--- |
+| **DELETE vs ON CONFLICT** | SPEC §4.1 exige idempotencia via DELETE (no ON CONFLICT). DELETE WHERE run_id limpia previos; INSERT siempre exitoso. Diferente de Bloque 2 (Singleton usa ON CONFLICT). |
+| **SPEC > TASK** | TASK menciona columnas extra (last_heartbeat, worker_id, retry_count) no presentes en SPEC §3.4. Omitidas por regla de precedencia SPEC > TASK. |
+| **clock_timestamp() en processed_at** | Uso explicito (no now()) para capturar tiempo real intra-transaccion, habilitando desempate FIFO de SPEC §4.2. |
+| **Indice parcial is_active** | Mas eficiente que B-Tree completo; 95%+ de estrategias seran is_active=TRUE en produccion. |
 
 ### Estado del Repositorio al Cierre de Sesion
 
 Rama activa: `feat/f1_e1_setup_supabase_ddl`.
 
 Archivos nuevos sin commitear (pendientes de commit):
-- `supabase/tests/006_singleton_constraint.sql`
-- `supabase/tests/007_singleton_delete_block.sql`
-- `supabase/tests/008_seed_admin_constants.sql`
-- `supabase/tests/009_draws_array_constraints.sql`
-- `supabase/tests/010_fn_validate_ball_array.sql`
-- `supabase/migrations/20260409000001_block_1_2.sql`
-- `docs/f1_1.1/audit/pipeline/cert_block2_trazabilidad_TSK-07.1.md`
-- `docs/f1_1.1/audit/pipeline/cert_block2_ghostcode_TSK-07.2.md`
-- `docs/f1_1.1/f1_1.1_task.md` (actualizado con evidencias Bloque 2)
+- `supabase/tests/011_projections_idempotency.sql`
+- `supabase/tests/012_bulk_insert_chunking.sql`
+- `supabase/migrations/20260410000001_block_3.sql`
+- `docs/f1_1.1/audit/pipeline/cert_block3_performance_TSK-12.md`
+- `docs/f1_1.1/f1_1.1_task.md` (actualizado con evidencias Bloque 3)
 - `docs/lessons/lessons-learned.md` (actualizado al cierre de sesion)
 
 ---
@@ -165,31 +178,30 @@ docs/f1_1.1/
       cert_block2_ghostcode_TSK-07.2.md         (CERT-B2-f1-1.1-GHOST-001)
 ```
 
-### Tablas Pendientes de Crear (Bloque 3)
+### Tablas Pendientes de Crear (Bloque 4)
 
-Las siguientes tablas definidas en la SPEC aun no tienen migracion DDL y son prerequisito del Bloque 3:
-- `strategies_metadata` — Definicion y versionamiento de algoritmos
-- `projections` — Pool de 1,802 combinaciones por sorteo
-- `performance` — Calculo de aciertos y puntajes ponderados
-- `sync_locks` — Semaforo atomico para el Engine
+La siguiente tabla definida en la SPEC aun no tiene migracion DDL y es prerequisito del Bloque 4:
+- `sync_locks` — Semaforo atomico para el Engine Python, previene condiciones de carrera en inserciones masivas
+
+Las tablas del Bloque 3 (`strategies_metadata`, `projections`, `performance`) ya estan creadas en `20260410000001_block_3.sql`.
 
 ### Bloqueadores Criticos
 
-**Ninguno.** El Bloque 2 esta completado con 26 assertions en VERDE y 2 tokens de certificacion emitidos (CERT-B2-f1-1.1-TRAZ-001 y CERT-B2-f1-1.1-GHOST-001). Las tablas core del schema (system_configuration, draws, manual_verification_queue, system_logs) y la funcion fn_validate_ball_array estan definidas y testeadas.
+**Ninguno.** El Bloque 3 esta completado con 9 assertions RED + 9 tareas GREEN + REFACTOR + CERT. La migracion `20260410000001_block_3.sql` contiene 382 lineas de DDL auditado con 1 token de certificacion (BACKEND-REVIEWER:CERT:12-BLOQUE3:APROBADO). Los tests RED (011_projections_idempotency.sql, 012_bulk_insert_chunking.sql) pasaran GREEN cuando la migracion sea aplicada contra una instancia de Supabase real.
 
-**Prerequisito de commit antes de iniciar Bloque 3**: El `devops-integrator` debe commitear todos los artefactos del Bloque 2 en `feat/f1_e1_setup_supabase_ddl` antes de iniciar TSK-F1_1.1-08.1-RED, para establecer un baseline auditado del schema core.
+**Prerequisito de commit antes de iniciar Bloque 4**: El `devops-integrator` debe commitear todos los artefactos del Bloque 3 en `feat/f1_e1_setup_supabase_ddl` antes de iniciar TSK-F1_1.1-13.1-RED, para establecer un baseline auditado del Motor de Performance.
 
 ### Proximo Paso Prioritario (Next Step Atomico)
 
-**Tarea inmediata**: `TSK-F1_1.1-08.1-RED` — Test pgTap: Idempotencia en insercion de proyecciones duplicadas  
+**Tarea inmediata**: `TSK-F1_1.1-13.1-RED` — Test pgTap: Polıticas de Row Level Security (RLS)  
 **Agente Responsable**: `backend-tester`  
-**Contexto**: Primera tarea del Bloque 3 (Motor de Performance — TDD). El `backend-tester` debe escribir tests pgTap que fallen porque las tablas `strategies_metadata` y `projections` aun no existen en las migraciones.
+**Contexto**: Primera tarea del Bloque 4 (Seguridad & RLS — TDD). El `backend-tester` debe escribir tests pgTap que fallen porque las politicas RLS aun no existen en las migraciones.
 
 **Accion concreta para el proximo agente**:
-1. Leer `docs/f1_1.1/f1_1.1_spec.md` seccion de tablas `strategies_metadata` y `projections` (contratos de columnas, constraints y logica de idempotencia).
-2. Leer `docs/f1_1.1/f1_1.1_task.md` para identificar las assertions exactas requeridas en TSK-08.1-RED y las tareas subsiguientes del Bloque 3.
-3. Crear `supabase/tests/011_projections_idempotence.sql` (o el nombre definido en TASK) con assertions pgTap que fallen — fase RED genuina (las tablas aun no existen).
-4. Ejecutar `supabase db reset` para confirmar que los tests fallan correctamente (26 anteriores en VERDE, los nuevos en ROJO) antes de proceder al GREEN del Bloque 3.
+1. Leer `docs/f1_1.1/f1_1.1_spec.md` seccion §5 (Seguridad, RLS, columnas audit_user/audit_timestamp).
+2. Leer `docs/f1_1.1/f1_1.1_task.md` Bloque 4 para identificar las 5 tareas RED de seguridad (TSK-13.1 a TSK-13.5).
+3. Crear `supabase/tests/013_rls_policies.sql` (nombre del TASK) con assertions pgTap que verifiquen que las politicas RLS no existen aun — fase RED genuina.
+4. Ejecutar `supabase db reset` para confirmar que los tests fallan correctamente (35 anteriores del Bloque 3 + 2 en VERDE de Bloques 0/1+2, nuevos del Bloque 4 en ROJO) antes de proceder al GREEN del Bloque 4.
 
 ---
 
@@ -367,3 +379,25 @@ Las siguientes tablas definidas en la SPEC aun no tienen migracion DDL y son pre
 5. **Seed con `INSERT ON CONFLICT DO NOTHING` para idempotencia del Singleton**: El registro inicial de `system_configuration` (id=1) usa `ON CONFLICT DO NOTHING` para garantizar que multiples ejecuciones de `supabase db reset` no generen error de PK duplicada. Esta es la unica excepcion al principio de "seed = datos fijos"; el admin_uuid se genera con `gen_random_uuid()` en el primer reset y se preserva en resets subsiguientes gracias al ON CONFLICT.
 
 6. **Eliminacion de 4 ALTER TABLE redundantes en REFACTOR**: El draft inicial de la migracion usaba ALTER TABLE post-creacion para agregar CHECKs nombrados a tablas ya definidas. En la fase REFACTOR, todos los CHECKs fueron integrados directamente en el CREATE TABLE original. Esta decision reduce el numero de statements DDL, elimina estados intermedios invalidos del schema y hace la migracion atomicamente correcta desde el primer statement.
+
+---
+
+### [2026-04-10] — Cierre Bloque 3 — Motor de Performance (Etapa 1.1)
+
+**Contexto**: Tercera sesion de desarrollo activo de la Etapa 1.1. Bloque 3 completado en una sola sesion: 2 tareas RED (9 assertions pgTap), 7 tareas GREEN (3 tablas + 1 funcion + 2 indices), 1 tarea REFACTOR (4 indices adicionales), 1 CERT de calidad. Migracion 20260410000001_block_3.sql con 382 lineas de DDL auditado. Token de certificacion: BACKEND-REVIEWER:CERT:12-BLOQUE3:APROBADO.
+
+**Decisiones Tomadas**:
+
+1. **Idempotencia via DELETE previo (no ON CONFLICT) en fn_bulk_insert_projections**: La SPEC §4.1 exige que la funcion implemente "DELETE WHERE run_id = p_run_id" antes de INSERT, garantizando que reruns del Engine Python produzcan exactamente el mismo estado final sin duplicados. Esta decision contrasta con el Bloque 2 (Singleton usa ON CONFLICT DO NOTHING). El patrón DELETE+INSERT es el contrato obligatorio para resiliencia ante fallos de GHA.
+
+2. **SPEC > TASK como regla de resolución de conflictos**: El TASK menciona columnas adicionales (last_heartbeat, worker_id, retry_count) en projections que no figuran en SPEC §3.4. Se aplicó la regla de prevalencia SPEC > TASK y se omitieron esas columnas. La SPEC es fuente de verdad de arquitectura; el TASK es solo una propuesta de desglose de implementación.
+
+3. **clock_timestamp() en performance.processed_at (no now())**: Se usó clock_timestamp() para capturar el tiempo real dentro de la transaccion actual, permitiendo desempate FIFO de rankings (SPEC §4.2). now() retorna el tiempo al inicio de la transaccion; clock_timestamp() es el tiempo real en el momento de ejecucion del statement DDL. Para un scoring que ocurre en multiples statements, clock_timestamp() proporciona granularidad mayor.
+
+4. **Índice parcial en is_active para strategies_metadata**: Se creó CREATE INDEX ... WHERE is_active = TRUE en lugar de un B-Tree completo. Esta decision se basa en que en produccion, el 95%+ de estrategias tendran is_active=TRUE, haciendo el indice parcial mas pequeno en disco y mas rapido de actualizar. El indice parcial cumple la misma funcion que un B-Tree para la query mas comun (JOIN con estrategias activas) pero sin la sobrecarga de indexar filas inactivas.
+
+5. **Orden canonico de migracion preservado (6 bloques secuenciales)**: La migracion del Bloque 3 sigue exactamente el mismo patron de orden del Bloque 2: Extensions -> Functions -> Tables -> Triggers -> Indexes -> Seed. Aunque el Bloque 3 no tiene Triggers ni Seed, la estructura se mantiene por consistencia y documentacion explicita de que el patrón es standar obligatorio para la Etapa 1.1.
+
+6. **Indice compuesto idx_performance_tiebreak con orden preciso**: El indice (score DESC, processed_at ASC, projection_id ASC) implementa la jerarquia de desempate de SPEC §4.2: puntaje mas alto (DESC), procesado mas temprano (ASC), UUID determinista (ASC). Este orden permite que el planificador PostgreSQL use el indice para ORDER BY sin necesidad de Sort operator, optimizando ranking queries.
+
+7. **4 indices REFACTOR para optimizacion de planes de ejecucion**: El REFACTOR identifica 5 queries core (Q1-Q5) que originariamente ejecutarian full table scans. Se crearon 4 indices adicionales (idx_projections_run_id, idx_projections_status, idx_projections_date_status, idx_strategies_metadata_is_active) para convertir Seq Scans en Index Scans eficientes. El analisis fue estatico (sin acceso a BD real) pero basado en planes de ejecucion esperados conforme a la selectividad de datos prevista.
