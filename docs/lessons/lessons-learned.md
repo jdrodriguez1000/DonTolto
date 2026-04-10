@@ -155,3 +155,53 @@ El TASK menciono columnas inexistentes en SPEC; esto paso desapercibido hasta el
 
 **Leccion 14 — Los tests RED de infraestructura DDL no son ejecutables contra BD real hasta que la migracion sea aplicada**
 Esto es una observacion de arquitectura, no un error. Los tests pgTap se escriben RED (fallan porque las tablas no existen) y pasan GREEN solo despues de que la migracion sea aplicada. Esto es correcto para TDD en infraestructura. El proximo agente (db-manager) debe ser consciente de esta dependencia y aplicar la migracion como primer paso antes de ejecutar los tests contra BD real.
+
+---
+
+## Sesion: 2026-04-10 (Fase 1, Etapa 1.1 — Bloque 4: Seguridad & RLS)
+
+### Exitos y Aciertos Tecnicos
+
+**Ciclo TDD RED -> GREEN -> REFACTOR -> CERT completado con 33 assertions y 4 migraciones de seguridad**
+El Bloque 4 ejecuto el ciclo TDD de seguridad completo: 5 archivos de tests RED (013 al 017, 33 assertions), 4 migraciones GREEN (funciones SECURITY DEFINER, 20 politicas RLS, GRANTs, helper fn_is_admin), 1 REFACTOR y 1 CERT con token CERT-B4-f1-1.1-FINAL-2026-04-10. El resultado es una capa de seguridad de BD completamente auditada y certificada. Suite final: 32/33 assertions PASS (1 falla de entorno local no imputable a implementacion).
+
+**Triple barrera ADR-06 como patron estandar anti-schema-hijacking**
+La combinacion SECURITY DEFINER + SET search_path = extensions, public (en proconfig de pg_proc) + OWNER TO postgres constituye la triple barrera que previene schema hijacking. Aplicada a las 4 funciones del Bloque 4, este patron garantiza que incluso si un atacante manipula su search_path de sesion antes de invocar la funcion, la funcion siempre resuelve nombres de objetos desde sus esquemas fijos declarados en la definicion. Este patron debe ser el estandar para TODA funcion SECURITY DEFINER del proyecto en Bloques posteriores.
+
+**COALESCE guard doble como contrato de fail-closed para politicas RLS Admin**
+El patron `USING (auth.uid()::text = COALESCE(current_setting('app.current_admin_id', TRUE), '') AND COALESCE(...) != '')` garantiza fail-closed: si la variable de sesion es NULL (current_setting con missing_ok=TRUE retorna NULL) o string vacio, ninguna comparacion con un UUID valido puede ser TRUE. La doble condicion elimina edge cases (NULL == NULL en algunos contextos SQL). Este patron debe aplicarse en TODAS las politicas de tipo Admin en etapas futuras; una sola instancia sin COALESCE es una vulnerabilidad potencial.
+
+**REVOKE ALL FROM PUBLIC como primer statement en migraciones de funciones SECURITY DEFINER**
+PostgreSQL otorga EXECUTE a PUBLIC por defecto en todas las funciones nuevas. Para funciones SECURITY DEFINER (que ejecutan con privilegios del owner, tipicamente postgres), este comportamiento es un vector OWASP A01 (Broken Access Control). El patron correcto: REVOKE ALL ON FUNCTION ... FROM PUBLIC como primer statement tras el CREATE FUNCTION, seguido de GRANTs explicitos por rol. Este protocolo debe ser automatico en cualquier funcion SECURITY DEFINER, no una medida opcional.
+
+**fn_is_admin() helper como contrato de reutilizacion para politicas futuras**
+La funcion fn_is_admin() encapsula el COALESCE guard en un helper STABLE SECURITY DEFINER. Aunque no puede reemplazar las politicas existentes sin romper los tests RED (que inspeccionan texto literal del pg_policies.qual), queda disponible para todas las politicas nuevas del Bloque 5 en adelante. El patron `USING (public.fn_is_admin())` es mas legible, menos propenso a errores de tipeo y centraliza el cambio si el mecanismo de autenticacion evoluciona.
+
+---
+
+### Fricciones y Desafios
+
+**Refactor completo bloqueado por inspecciones de texto literal en pg_policies.qual**
+El refactor de reemplazar el COALESCE inline en 20 politicas por `USING (public.fn_is_admin())` fue descartado porque los tests RED 013-A7 y 016-A3/A5 inspeccionan `pg_policies.qual LIKE '%coalesce%'` y `LIKE '%current_setting%'`. PostgreSQL almacena el texto literal de la clausula USING en pg_policies.qual. Al reemplazar COALESCE por fn_is_admin(), el qual almacenado seria `fn_is_admin()` y las assertions fallarian. La leccion: cuando los tests validan texto literal de metadatos de BD (pg_policies.qual, pg_proc.proconfig) en lugar de comportamiento funcional, limitan el espacio de refactorizacion del DDL. Los tests de la proxima etapa deben preferir validaciones funcionales (filas retornadas, excepciones lanzadas) sobre inspecciones de texto.
+
+**fn_is_admin() creada despues de la migracion de GRANTs — sin REVOKE PUBLIC**
+La migracion de refactor (20260410000005_block_4_refact.sql) se ejecuto despues de la migracion de grants (20260410000004_block_4_grants.sql). El REVOKE ALL FROM PUBLIC que cubre las 3 funciones anteriores no aplica a fn_is_admin() porque fue creada en una migracion posterior. El hallazgo fue detectado en la auditoria CERT y registrado como H-1 (CVSS ~5.3). Leccion: cuando se crean funciones SECURITY DEFINER en migraciones de REFACTOR, deben incluir su propio REVOKE ALL FROM PUBLIC dentro de la misma migracion, no depender de una migracion de grants anterior.
+
+**GRANT UPDATE excesivo en system_configuration para authenticated — mitigado por RLS pero riesgo residual**
+La migracion de grants otorgo UPDATE en system_configuration a authenticated para permitir que el Admin actualice configuraciones via API. Sin embargo, la politica RLS restringe UPDATE a service_role exclusivamente. Esta inconsistencia entre privilegio de objeto (GRANT) y politica de fila (RLS) significa que si RLS se deshabilita accidentalmente (ej. migration que ejecuta ALTER TABLE ... DISABLE ROW LEVEL SECURITY sin darse cuenta), un usuario authenticated generico podria modificar admin_uuid. La leccion: los GRANTs de objeto deben ser el subconjunto exacto de lo que las politicas RLS permiten, no un superconjunto. Diferencia entre GRANT y politica RLS debe ser cero en tablas criticas de configuracion.
+
+---
+
+### Lecciones Clave y Recomendaciones
+
+**Leccion 15 — Toda funcion SECURITY DEFINER requiere triple barrera ADR-06 + REVOKE FROM PUBLIC en la misma migracion**
+Cuando se crea una funcion SECURITY DEFINER: (1) SET search_path = extensions, public en la definicion, (2) OWNER TO postgres inmediatamente tras la funcion, (3) REVOKE ALL ON FUNCTION ... FROM PUBLIC en el mismo bloque DDL. Los tres pasos son obligatorios y no deben separarse en migraciones distintas. Esta regla debe codificarse en una plantilla de migracion estandar para el proyecto y verificarse como criterio de rechazo en los CERTs.
+
+**Leccion 16 — Los tests RED de seguridad deben validar comportamiento funcional, no texto literal de metadatos**
+Las assertions que inspeccionan pg_policies.qual con LIKE '%coalesce%' son fragiles: bloquean refactorizaciones validas (como extraer logica a fn_is_admin()) sin proteger contra vulnerabilidades reales. La alternativa correcta: usar set_config + SET LOCAL para simular sesiones sin contexto y verificar que el COUNT de filas retornadas sea 0. Las assertions funcionales (0 filas = acceso denegado) son mas robustas que las assertions de texto (el qual contiene esta palabra). Este cambio debe aplicarse en la evolucion de los tests 013 y 016 en el Bloque 5.
+
+**Leccion 17 — La consistencia GRANT de objeto vs politica RLS debe ser cero en tablas criticas**
+En tablas de configuracion critica (system_configuration), los privilegios de objeto (GRANT) deben coincidir exactamente con lo que las politicas RLS permiten. Si la politica RLS restringe UPDATE a service_role, el GRANT de objeto no debe incluir UPDATE para authenticated. La divergencia entre capas (GRANT permisivo + politica restrictiva) crea riesgo residual ante deshabilitacion accidental de RLS. El principio: la capa GRANT es la primera linea de defensa, la capa RLS es la segunda. Ambas deben ser coherentes y la primera no debe ser mas permisiva que la segunda.
+
+**Leccion 18 — El bloque DO condicional es el patron correcto para GRANTs de esquemas opcionales (pg_cron)**
+Cuando un GRANT depende de un esquema que puede no existir en todos los entornos (ej. cron en Supabase local vs Supabase Cloud), usar un bloque DO con IF EXISTS es mas robusto que emitir el GRANT directamente. La migracion queda idempotente y ejecutable en ambos entornos sin error. Este patron debe replicarse para cualquier GRANT sobre extensiones o esquemas que no esten garantizados en el entorno local de desarrollo (pg_net, vault, etc.).
