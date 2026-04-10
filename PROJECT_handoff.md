@@ -12,10 +12,10 @@
 | :----------------- | :----------------------------------------------------------------------------------- |
 | **Fase Activa**    | Fase 1 — Infraestructura de Datos (Cimentacion)                                      |
 | **Etapa Activa**   | **1.1 — Setup de Supabase y DDL** (Etapa 1.0 cerrada formalmente)                    |
-| **Bloque Activo**  | Bloque 4 COMPLETADO — Siguiente: Bloque 5 (Logica de Negocio — fn_compute_async_scoring, fn_verify_and_promote_draw, cron) |
+| **Bloque Activo**  | Bloque 5 COMPLETADO — Siguiente: Bloque 6 (Automatizacion & Orquestacion — sync_locks, pg_cron, fallback) |
 | **Rama Git**       | `feat/f1_e1_setup_supabase_ddl`                                                      |
 | **Ultimo Commit**  | `584d0a5` — `feat: implementacion de logica DDL bloque 3, performance y certificacion` |
-| **Capas Tecnicas** | DB/Infra (Supabase local, pgTap, PostgreSQL 16, RLS, pg_cron, PL/pgSQL SECURITY DEFINER) |
+| **Capas Tecnicas** | DB/Infra (Supabase local, pgTap, PostgreSQL 16, PL/pgSQL, RLS, SECURITY DEFINER, pg_cron) |
 
 ---
 
@@ -56,13 +56,32 @@
 | TSK-F1_1.1-16.1-REFACT     | `20260410000005_block_4_refact.sql` — fn_is_admin() helper SECURITY DEFINER disponible para Bloque 5       | Completado |
 | TSK-F1_1.1-17-CERT         | Auditoria de invulnerabilidad. Token: CERT-B4-f1-1.1-FINAL-2026-04-10                                      | Completado |
 
+### Estado del Bloque 5 — Motores RPC [TDD]: 100% COMPLETADO
+
+| Tarea                      | Descripcion                                                                                                       | Estado     |
+| :------------------------- | :---------------------------------------------------------------------------------------------------------------- | :--------- |
+| TSK-F1_1.1-18.1-RED        | `018_scoring_snapshot_invariant.sql` — 6 assertions: snapshotting de system_config al inicio                     | Completado |
+| TSK-F1_1.1-18.2-RED        | `019_promote_admin_priority.sql` — 5 assertions: prioridad Admin > Scraper en Double-Entry                       | Completado |
+| TSK-F1_1.1-18.3-RED        | `020_conflict_promotion_block.sql` — 5 assertions: bloqueo si is_conflict=TRUE                                   | Completado |
+| TSK-F1_1.1-18.4-RED        | `021_transaction_atomicity.sql` — 5 assertions: atomicidad backup→DELETE→RESET→promover                         | Completado |
+| TSK-F1_1.1-18.5-RED        | `022_forensic_backup_integrity.sql` — 5 assertions: JSONB_AGG en system_logs antes de recalculo                  | Completado |
+| TSK-F1_1.1-18.6-RED        | `023_midflight_config_snapshot.sql` — 5 assertions: snapshot persiste ante cambio mid-flight                     | Completado |
+| TSK-F1_1.1-19.1-GREEN      | `20260410000006_block_5a.sql` — fn_compute_async_scoring real: snapshot, kill-switch, SKIP LOCKED, log audit     | Completado |
+| TSK-F1_1.1-19.2-GREEN      | (incluida en 19.1) — fn_verify_and_promote_draw: Admin priority, promocion, is_verified=TRUE, status='final'     | Completado |
+| TSK-F1_1.1-19.3-GREEN      | (incluida en 19.1) — Fallback Ghost >24h: promover status='transient', log warning                               | Completado |
+| TSK-F1_1.1-19.4-GREEN      | (incluida en 19.1) — Backup forense JSONB_AGG en system_logs level='audit' antes de recalculo atomico            | Completado |
+| TSK-F1_1.1-19.5-GREEN      | (incluida en 19.1) — retry_count + error_fatal: ALTER TABLE projections ADD COLUMN retry_count                   | Completado |
+| TSK-F1_1.1-20.1-REFACT     | `20260410000007_block_5a_refact.sql` — 3 helpers: fn_snapshot_system_config, fn_backup_performance_to_logs, fn_reset_draw_scoring | Completado |
+| TSK-F1_1.1-21-CERT         | Auditoria calidad logica RPC. Token: CERT-B5-f1-1.1-FINAL-20260410 — APROBADO                                   | Completado |
+
 ### Resumen de Progreso Global (Etapa 1.1)
 
 - **Bloque 0/1**: 100% — 9 tareas completadas
 - **Bloque 2**: 100% — 9 tareas completadas, 26 assertions GREEN
 - **Bloque 3**: 100% — 10 tareas completadas, 9 assertions RED + DDL + 4 indices
 - **Bloque 4**: 100% — 11 tareas completadas, 33 assertions, 20 politicas RLS, 4 migraciones
-- **Etapa 1.1 global**: EN PROGRESO — Bloques 0/1, 2, 3 y 4 COMPLETADOS. Siguiente: Bloque 5
+- **Bloque 5**: 100% — 13 tareas completadas, 31 assertions, 2 migraciones RPC + REFACT
+- **Etapa 1.1 global**: EN PROGRESO — Bloques 0/1, 2, 3, 4 y 5 COMPLETADOS. Siguiente: Bloque 6
 
 ### Historial de Etapas Cerradas (referencia)
 
@@ -74,103 +93,99 @@
 
 ## §3 Inventario Tecnico de Cambios
 
-### Archivos Creados en Esta Sesion (Bloque 4 — TDD Cycle)
+### Archivos Creados en Esta Sesion (Bloque 5 — TDD Cycle)
 
-| Archivo                                                                          | Tipo  | Descripcion                                                                                                   |
-| :------------------------------------------------------------------------------- | :---- | :------------------------------------------------------------------------------------------------------------ |
-| `supabase/tests/013_rls_fail_closed_coalesce.sql`                               | Nuevo | 7 assertions pgTap RED: COALESCE guard fail-closed, RLS activo, fn_setup_security_context (TSK-13.1)         |
-| `supabase/tests/014_rls_security_definer_search_path.sql`                       | Nuevo | 7 assertions pgTap RED: inspeccion pg_proc.proconfig, SECURITY DEFINER, owner postgres (TSK-13.2)            |
-| `supabase/tests/015_rls_web_anon_deny_all.sql`                                  | Nuevo | 6 assertions pgTap RED: Deny All implicito para web_anon via RLS activo sin politicas (TSK-13.3)             |
-| `supabase/tests/016_rls_authenticated_restricted.sql`                           | Nuevo | 6 assertions pgTap RED: acceso Admin condicionado a admin_uuid via current_setting (TSK-13.4)                |
-| `supabase/tests/017_rls_service_role_bypass.sql`                                | Nuevo | 7 assertions pgTap RED: bypassrls + politicas minimo privilegio service_role (TSK-13.5)                      |
-| `supabase/migrations/20260410000002_block_4.sql`                                | Nuevo | fn_setup_security_context (SECURITY DEFINER, owner postgres, SET search_path = extensions, public) + 2 stubs |
-| `supabase/migrations/20260410000003_block_4_rls.sql`                           | Nuevo | ENABLE RLS en 6 tablas + 20 politicas COALESCE-guarded para system_configuration, draws, projections, performance, system_logs, manual_verification_queue |
-| `supabase/migrations/20260410000004_block_4_grants.sql`                        | Nuevo | REVOKE ALL FROM PUBLIC en 3 funciones + GRANTs por rol (anon, authenticated, service_role) + pg_cron condicional + verificacion forense DO block |
-| `supabase/migrations/20260410000005_block_4_refact.sql`                        | Nuevo | fn_is_admin() STABLE SECURITY DEFINER: helper COALESCE guard para politicas futuras del Bloque 5             |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk13.1_RED.md`                        | Nuevo | Token RED: CERT-B4-f1-1.1-RED-013.1                                                                          |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk13.2_RED.md`                        | Nuevo | Token RED: CERT-B4-f1-1.1-RED-013.2                                                                          |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk13.3_RED.md`                        | Nuevo | Token RED: CERT-B4-f1-1.1-RED-013.3                                                                          |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk13.4_RED.md`                        | Nuevo | Token RED: CERT-B4-f1-1.1-RED-013.4                                                                          |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk13.5_RED.md`                        | Nuevo | Token RED: CERT-B4-f1-1.1-RED-013.5                                                                          |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk14.1_GREEN.md`                      | Nuevo | Token GREEN: fn_setup_security_context certificada (014 → 7/7 PASS)                                          |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk14.2_14.3_GREEN.md`                 | Nuevo | Token GREEN: 20 politicas RLS, 013/016/017 → 100% PASS                                                       |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk15.1_GREEN.md`                      | Nuevo | Token GREEN: GRANTs aplicados, tests sin regresion                                                            |
-| `docs/f1_1.1/audit/pipeline/cert_block4_tsk16.1_REFACT.md`                     | Nuevo | Token REFACT: decision tecnica justificada (refactor parcial), fn_is_admin disponible                         |
-| `docs/f1_1.1/audit/pipeline/cert_block4_CERT_FINAL.md`                         | Nuevo | Token FINAL: CERT-B4-f1-1.1-FINAL-2026-04-10 — SEGURIDAD_APROBADA                                           |
+| Archivo                                                                              | Tipo  | Descripcion                                                                                                   |
+| :----------------------------------------------------------------------------------- | :---- | :------------------------------------------------------------------------------------------------------------ |
+| `supabase/tests/018_scoring_snapshot_invariant.sql`                                 | Nuevo | 6 assertions RED: fn_compute_async_scoring snapshot system_config + anti-carrera (TSK-18.1)                  |
+| `supabase/tests/019_promote_admin_priority.sql`                                     | Nuevo | 5 assertions RED: Admin > Scraper, is_manual=TRUE, status='final' en draws (TSK-18.2)                        |
+| `supabase/tests/020_conflict_promotion_block.sql`                                   | Nuevo | 5 assertions RED: bloqueo promocion si is_conflict=TRUE activo (TSK-18.3)                                     |
+| `supabase/tests/021_transaction_atomicity.sql`                                      | Nuevo | 5 assertions RED: atomicidad backup→DELETE performance→RESET projections→promover (TSK-18.4)                 |
+| `supabase/tests/022_forensic_backup_integrity.sql`                                  | Nuevo | 5 assertions RED: JSONB_AGG en system_logs level='audit' previo al recalculo (TSK-18.5)                      |
+| `supabase/tests/023_midflight_config_snapshot.sql`                                  | Nuevo | 5 assertions RED: snapshot de system_config persiste ante cambio mid-flight (TSK-18.6)                        |
+| `supabase/migrations/20260410000006_block_5a.sql`                                   | Nuevo | H-1+H-2 saldadas; retry_count en projections; fn_compute_async_scoring real; fn_verify_and_promote_draw real |
+| `supabase/migrations/20260410000007_block_5a_refact.sql`                            | Nuevo | 3 helpers SECURITY DEFINER: fn_snapshot_system_config, fn_backup_performance_to_logs, fn_reset_draw_scoring  |
+| `docs/f1_1.1/audit/pipeline/cert_block5_tsk18.1_RED.md` al `18.6_RED.md`          | Nuevo | Tokens RED: CERT-B5-f1-1.1-RED-018.1 al 018.6                                                                |
+| `docs/f1_1.1/audit/pipeline/cert_block5_tsk19.1-19.5_GREEN.md`                     | Nuevo | Token GREEN: 6/6 tests Bloque 5 PASS, remediaciones H-1/H-2 aplicadas                                        |
+| `docs/f1_1.1/audit/pipeline/cert_block5_tsk20.1_REFACT.md`                         | Nuevo | Token REFACT: 3 helpers extraidos, refactor completo viable (tests funcionales, no de texto literal)          |
+| `docs/f1_1.1/audit/pipeline/cert_block5_CERT_FINAL.md`                             | Nuevo | Token FINAL: CERT-B5-f1-1.1-FINAL-20260410 — APROBADO                                                        |
 
 ### Archivos Modificados en Esta Sesion
 
 | Archivo                        | Tipo       | Descripcion                                                                              |
 | :----------------------------- | :--------- | :--------------------------------------------------------------------------------------- |
-| `docs/f1_1.1/f1_1.1_task.md`  | Modificado | Tareas TSK-13.1 a TSK-17-CERT del Bloque 4 marcadas `[x]`                              |
+| `docs/f1_1.1/f1_1.1_task.md`  | Modificado | Tareas TSK-18.1 a TSK-21-CERT del Bloque 5 marcadas `[x]`                              |
 
 ### Estado del Repositorio al Cierre de Sesion
 
 Rama activa: `feat/f1_e1_setup_supabase_ddl`.
 
-**Archivos sin commitear (pendientes de commit antes de iniciar Bloque 5)**:
-- `supabase/tests/013_rls_fail_closed_coalesce.sql` al `017_rls_service_role_bypass.sql`
-- `supabase/migrations/20260410000002_block_4.sql` al `20260410000005_block_4_refact.sql`
-- Todos los `docs/f1_1.1/audit/pipeline/cert_block4_*.md`
+**Archivos sin commitear (acumulados Bloques 4 y 5 — pendientes de commit antes de iniciar Bloque 6)**:
+- `supabase/tests/013_rls_*.sql` al `023_midflight_config_snapshot.sql`
+- `supabase/migrations/20260410000002_block_4.sql` al `20260410000007_block_5a_refact.sql`
+- Todos los `docs/f1_1.1/audit/pipeline/cert_block4_*.md` y `cert_block5_*.md`
 - `docs/f1_1.1/f1_1.1_task.md`
 
 ---
 
 ## §4 Mapa Tactico de Continuidad
 
-### Working Set Actual (completo al cierre del Bloque 4)
+### Working Set Actual (completo al cierre del Bloque 5)
 
 ```
 supabase/
   migrations/
-    20260409000001_block_1_2.sql     (B2 — schema core: system_configuration, draws, system_logs, etc.)
-    20260410000001_block_3.sql       (B3 — projections, performance, sync_locks, fn_bulk_insert_projections)
-    20260410000002_block_4.sql       (B4 — fn_setup_security_context + stubs fn_compute_async_scoring, fn_verify_and_promote_draw)
-    20260410000003_block_4_rls.sql   (B4 — ENABLE RLS + 20 politicas COALESCE-guarded)
-    20260410000004_block_4_grants.sql (B4 — REVOKEs + GRANTs + pg_cron condicional)
-    20260410000005_block_4_refact.sql (B4 — fn_is_admin() helper)
+    20260409000001_block_1_2.sql       (B2 — schema core + seed)
+    20260410000001_block_3.sql         (B3 — projections, performance, fn_bulk_insert_projections)
+    20260410000002_block_4.sql         (B4 — fn_setup_security_context + stubs originales)
+    20260410000003_block_4_rls.sql     (B4 — ENABLE RLS + 20 politicas)
+    20260410000004_block_4_grants.sql  (B4 — REVOKEs + GRANTs)
+    20260410000005_block_4_refact.sql  (B4 — fn_is_admin() helper)
+    20260410000006_block_5a.sql        (B5 — H-1/H-2 saldadas; retry_count; fn_compute real; fn_verify real)
+    20260410000007_block_5a_refact.sql (B5 — 3 helpers: fn_snapshot_system_config, fn_backup_performance_to_logs, fn_reset_draw_scoring)
   tests/
-    001 al 012 (B0/1, B2, B3 — todos GREEN)
-    013_rls_fail_closed_coalesce.sql    (B4 RED — 7 assertions, 7/7 PASS en GREEN)
-    014_rls_security_definer_search_path.sql (B4 RED — 7/7 PASS)
-    015_rls_web_anon_deny_all.sql       (B4 RED — 5/6 PASS, A1 falla de entorno local)
-    016_rls_authenticated_restricted.sql (B4 RED — 6/6 PASS)
-    017_rls_service_role_bypass.sql     (B4 RED — 7/7 PASS)
+    001 al 017 (B0/1, B2, B3, B4 — todos GREEN o fallas de entorno pre-existentes)
+    018_scoring_snapshot_invariant.sql    (B5 RED → 6/6 PASS en GREEN)
+    019_promote_admin_priority.sql        (B5 RED → 5/5 PASS)
+    020_conflict_promotion_block.sql      (B5 RED → 5/5 PASS)
+    021_transaction_atomicity.sql         (B5 RED → 5/5 PASS)
+    022_forensic_backup_integrity.sql     (B5 RED → 5/5 PASS)
+    023_midflight_config_snapshot.sql     (B5 RED → 5/5 PASS)
 
 docs/f1_1.1/
   audit/pipeline/
-    cert_block4_tsk13.1_RED.md ... cert_block4_tsk13.5_RED.md
-    cert_block4_tsk14.1_GREEN.md
-    cert_block4_tsk14.2_14.3_GREEN.md
-    cert_block4_tsk15.1_GREEN.md
-    cert_block4_tsk16.1_REFACT.md
-    cert_block4_CERT_FINAL.md   ← Token maestro Bloque 4
+    cert_block4_*.md     (Bloques 4 — todos emitidos)
+    cert_block5_tsk18.1_RED.md ... cert_block5_tsk18.6_RED.md
+    cert_block5_tsk19.1-19.5_GREEN.md
+    cert_block5_tsk20.1_REFACT.md
+    cert_block5_CERT_FINAL.md   ← Token maestro Bloque 5
 ```
 
-### Deuda Tecnica del Bloque 4 (remediacion obligatoria al inicio del Bloque 5)
+### Deuda Tecnica Activa
 
-| ID  | Severidad         | Descripcion                                                                                           | Accion requerida                                               |
-| :-- | :---------------- | :---------------------------------------------------------------------------------------------------- | :------------------------------------------------------------- |
-| H-1 | ADVERTENCIA ~5.3  | `fn_is_admin()` sin REVOKE FROM PUBLIC — cualquier rol puede invocarla (SECURITY DEFINER + postgres) | Agregar `REVOKE ALL ON FUNCTION public.fn_is_admin() FROM PUBLIC` en migracion Bloque 5 |
-| H-2 | ADVERTENCIA ~3.1  | GRANT UPDATE excesivo en system_configuration para `authenticated` — politica RLS lo bloquea por fila, pero si RLS se deshabilita accidentalmente queda expuesto | Agregar `REVOKE UPDATE ON public.system_configuration FROM authenticated` |
+| ID       | Severidad        | Descripcion                                                                              | Estado    |
+| :------- | :--------------- | :--------------------------------------------------------------------------------------- | :-------- |
+| H-1, H-2 | ~~Advertencia~~  | fn_is_admin() sin REVOKE + GRANT UPDATE excesivo en system_configuration               | SALDADAS en `20260410000006_block_5a.sql` L29-39 |
+| ADV-B5-01 | CVSS 2.1        | Fallback Ghost lee `debt_threshold_hours` directamente en lugar de usar `fn_snapshot_system_config()` — inconsistencia menor | Remediar en siguiente ciclo REFACT del Bloque 6 |
 
 ### Bloqueadores Criticos
 
-**Ninguno.** Bloque 4 certificado SEGURIDAD_APROBADA con token CERT-B4-f1-1.1-FINAL-2026-04-10. Suite: 32/33 assertions PASS (1 falla de entorno pre-existente: `web_anon` ausente en Supabase local — pasa en produccion).
+**Ninguno.** Bloque 5 certificado APROBADO con token CERT-B5-f1-1.1-FINAL-20260410. Suite: 31/31 assertions de Bloque 5 PASS. Sin regresiones en Bloques 1-4.
 
-**Prerequisito antes de iniciar Bloque 5**: El `devops-integrator` debe commitear todos los artefactos del Bloque 4 para establecer un baseline auditado de seguridad.
+**Prerequisito antes de iniciar Bloque 6**: El `devops-integrator` debe commitear todos los artefactos de Bloques 4 y 5 (acumulados sin commit) antes de iniciar las tareas RED del Bloque 6.
 
 ### Proximo Paso Prioritario (Next Step Atomico)
 
-**Tarea inmediata**: Commit del Bloque 4 + inicio de `TSK-F1_1.1-18.1-RED` (Bloque 5 — Logica de Negocio)
+**Tarea inmediata**: Commit acumulado Bloques 4+5 + inicio de `TSK-F1_1.1-22.1-RED` (Bloque 6 — Automatizacion & Orquestacion)
 
 **Agente responsable commit**: `devops-integrator`
-**Agente responsable Bloque 5 RED**: `backend-tester`
+**Agente responsable Bloque 6 RED**: `backend-tester`
 
 **Accion concreta**:
-1. `devops-integrator` debe hacer commit atomico de todos los artefactos del Bloque 4 en `feat/f1_e1_setup_supabase_ddl` con mensaje: `feat: implementacion de seguridad RLS bloque 4 - CERT-B4-f1-1.1-FINAL-2026-04-10 (TSK-F1_1.1-13.1 al 17-CERT)`.
-2. `backend-tester` inicia `TSK-F1_1.1-18.x-RED` — tests pgTap para `fn_compute_async_scoring` (logica real de scoring) y `fn_verify_and_promote_draw` (Double-Entry). Leer `docs/f1_1.1/f1_1.1_task.md` Bloque 5 para identificar las tareas RED.
-3. Al inicio del Bloque 5, `db-manager` debe agregar las dos remediaciones de deuda tecnica (H-1 y H-2) como primer statement de la migracion `[TIMESTAMP]_block_5.sql`.
+1. `devops-integrator` debe hacer commit atomico de todos los artefactos de Bloques 4 y 5 con mensaje: `feat: implementacion RLS bloque 4 y motores RPC bloque 5 - CERT-B4-f1-1.1-FINAL + CERT-B5-f1-1.1-FINAL (TSK-F1_1.1-13.1 al 21-CERT)`.
+2. `backend-tester` inicia `TSK-F1_1.1-22.1-RED` y `22.2-RED` — tests pgTap para `fn_manage_lock` (sync_locks con TTL 60min y reseteo de workers con latido >30min) y modo fallback (flag ante retrasos >24h).
+3. Al inicio del Bloque 6, `db-manager` crea la tabla `sync_locks` (ausente en migraciones actuales) + `fn_manage_lock` + `fn_monitor_and_activate_fallback` con logica de pg_cron.
+4. Remediar ADV-B5-01: sustituir lectura directa de `debt_threshold_hours` en Fallback Ghost por llamada a `fn_snapshot_system_config()` como primer statement de la migracion `[TIMESTAMP]_block_6.sql`.
 
 ---
 
@@ -392,3 +407,23 @@ docs/f1_1.1/
 6. **pg_cron GRANT con bloque DO condicional**: El GRANT de USAGE ON SCHEMA cron a service_role requiere que el esquema cron exista. En entorno local (Supabase CLI), cron puede no estar disponible. La solucion es un bloque DO que detecta la existencia del esquema antes de ejecutar el GRANT, emitiendo RAISE NOTICE si no existe. Esto hace la migracion idempotente y ejecutable en ambos entornos (local y produccion Supabase Cloud).
 
 7. **H-1 y H-2 como deuda tecnica prioritaria para Bloque 5**: La auditoria CERT identifico dos advertencias que deben remediarse al inicio del Bloque 5: REVOKE PUBLIC de fn_is_admin() (CVSS ~5.3) y REVOKE UPDATE de system_configuration para authenticated (CVSS ~3.1). Ambas deben ser los primeros statements de la migracion block_5.sql antes de cualquier logica de negocio nueva.
+
+---
+
+### [2026-04-10] — Cierre Bloque 5 — Motores RPC (Etapa 1.1)
+
+**Contexto**: Quinta sesion de desarrollo activo de la Etapa 1.1. Bloque 5 completado en una sola sesion: 6 tareas RED (31 assertions en 6 archivos pgTap), 5 tareas GREEN (2 migraciones con implementacion real de fn_compute_async_scoring + fn_verify_and_promote_draw + 3 helpers SECURITY DEFINER + remediaciones H-1/H-2), 1 tarea REFACTOR (modularizacion completa viable), 1 CERT APROBADO. Token maestro: CERT-B5-f1-1.1-FINAL-20260410. Suite Bloque 5: 31/31 assertions PASS.
+
+**Decisiones Tomadas**:
+
+1. **Patron CLAIM TOKEN en fn_compute_async_scoring**: La funcion SQL solo implementa la fase de reclamacion: snapshot de system_configuration → kill-switch check → marcado anti-carrera `pending→calculating` via FOR UPDATE SKIP LOCKED. El scoring real (calculo de hits, INSERT en performance, transicion a 'calculated') ocurre en el Engine Python asincrono. Este diseño es coherente con la arquitectura ASYNC de la Etapa 1.1 (el Motor Python en GHA procesa, la BD solo coordina el estado).
+
+2. **Tests funcionales vs texto literal — leccion Bloque 4 aplicada**: Los 6 tests del Bloque 5 verifican exclusivamente efectos secundarios observables (filas en tablas, valores de columnas, JSONB en metadata). Ninguno inspecciona pg_proc.prosrc ni pg_policies.qual. Resultado: el REFACTOR completo fue viable sin riesgo de regresion — los 3 helpers reemplazaron logica duplicada en fn_verify_and_promote_draw sin romper ningun assertion.
+
+3. **Modularizacion completa en REFACT (a diferencia del Bloque 4)**: El REFACTOR del Bloque 4 fue parcial (solo creo fn_is_admin() sin reescribir politicas) porque los tests inspeccionaban texto literal. El REFACTOR del Bloque 5 fue completo: 3 helpers extrajeron logica duplicada y las funciones principales fueron reescritas para usarlos. Este contraste confirma que tests funcionales habilitan ciclos de refactorizacion sin fricciones.
+
+4. **Triple barrera ADR-06 aplicada a los 3 helpers nuevos**: fn_snapshot_system_config(), fn_backup_performance_to_logs(), fn_reset_draw_scoring() — todos con SECURITY DEFINER + SET search_path = extensions, public + OWNER TO postgres + REVOKE ALL FROM PUBLIC. Este patron se consolida como estandar obligatorio para toda funcion auxiliar del proyecto que acceda a tablas protegidas.
+
+5. **retry_count como columna de coordinacion Engine↔BD**: La columna `retry_count INTEGER DEFAULT 0` en projections actua como semaforo de estado compartido entre la BD (que incrementa en error) y el Engine Python (que lee el valor para decidir si reintentar o marcar error_fatal). Esta interfaz minima evita la necesidad de comunicacion directa entre workers GHA — la BD es el unico canal de coordinacion.
+
+6. **ADV-B5-01 — Fallback Ghost lee system_config directamente en lugar de fn_snapshot_system_config()**: La rama Fallback Ghost en fn_verify_and_promote_draw lee debt_threshold_hours directamente desde system_configuration en lugar de delegar al helper fn_snapshot_system_config(). Esto es inconsistente con el patron de snapshotting del resto de la funcion. El impacto practico es bajo (es una decision puntual binaria, no un loop iterativo), pero debe corregirse en el primer ciclo REFACT del Bloque 6 para eliminar la divergencia arquitectonica.

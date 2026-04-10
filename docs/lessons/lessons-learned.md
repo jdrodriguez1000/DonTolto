@@ -205,3 +205,47 @@ En tablas de configuracion critica (system_configuration), los privilegios de ob
 
 **Leccion 18 — El bloque DO condicional es el patron correcto para GRANTs de esquemas opcionales (pg_cron)**
 Cuando un GRANT depende de un esquema que puede no existir en todos los entornos (ej. cron en Supabase local vs Supabase Cloud), usar un bloque DO con IF EXISTS es mas robusto que emitir el GRANT directamente. La migracion queda idempotente y ejecutable en ambos entornos sin error. Este patron debe replicarse para cualquier GRANT sobre extensiones o esquemas que no esten garantizados en el entorno local de desarrollo (pg_net, vault, etc.).
+
+---
+
+## Sesion: 2026-04-10 (Fase 1, Etapa 1.1 — Bloque 5: Motores RPC)
+
+### Exitos y Aciertos Tecnicos
+
+**Leccion del Bloque 4 aplicada exitosamente: tests funcionales habilitaron REFACTOR completo**
+Los 6 tests RED del Bloque 5 (018-023) fueron disenados desde el inicio para verificar efectos secundarios observables (filas en tablas, valores de columnas, JSONB en metadata) en lugar de texto literal de metadatos de BD. Resultado: el REFACTOR del Bloque 5 fue completamente viable — los 3 helpers extrajeron logica duplicada y las funciones principales fueron reescritas sin romper ninguna assertion. Este contrasta directamente con el Bloque 4 donde los tests de texto literal bloquearon el refactor. La leccion 16 del Bloque 4 se verifico empiricamente en el Bloque 5.
+
+**Patron CLAIM TOKEN como separacion limpia de responsabilidades BD vs Engine Python**
+fn_compute_async_scoring implementa solo la fase de reclamacion (snapshot + kill-switch + SKIP LOCKED claim). El procesamiento real ocurre en el Engine Python asincrono. Esta separacion refleja la arquitectura ASYNC de la Etapa 1.1 y elimina la tentacion de ejecutar logica de calculo pesada dentro de una transaccion SQL. El patron es: la BD coordina estado (pending→calculating), el Engine calcula (calculating→calculated). Cualquier logica que mezcle ambas responsabilidades viola ADR-05 (Async Scoring).
+
+**3 helpers modularizados con triple barrera ADR-06 completa en una sola sesion de REFACT**
+fn_snapshot_system_config(), fn_backup_performance_to_logs(), fn_reset_draw_scoring() — los tres con SECURITY DEFINER + SET search_path + OWNER TO postgres + REVOKE FROM PUBLIC en la misma migracion. Al aprender la leccion H-1 del Bloque 4 (fn_is_admin sin REVOKE), el Bloque 5 aplico la triple barrera completa en el mismo bloque DDL de cada helper, sin separar el REVOKE en una migracion posterior.
+
+**Deudas H-1 y H-2 del Bloque 4 saldadas como primeros statements del Bloque 5**
+El mandato de remediar H-1 (REVOKE PUBLIC de fn_is_admin) y H-2 (REVOKE UPDATE excesivo en system_configuration) como primeros statements de la migracion block_5a.sql fue ejecutado correctamente. Esto confirma que documentar deuda tecnica con accion requerida especifica en el handoff garantiza que sea abordada al inicio del siguiente ciclo, no olvidada.
+
+---
+
+### Fricciones y Desafios
+
+**ADV-B5-01: Fallback Ghost lee debt_threshold_hours directamente en lugar del helper fn_snapshot_system_config()**
+La rama Fallback Ghost en fn_verify_and_promote_draw lee debt_threshold_hours con una consulta directa a system_configuration en lugar de delegar al helper fn_snapshot_system_config(). El impacto practico es bajo (decision puntual binaria, no un loop iterativo donde la variacion seria critica), pero crea inconsistencia con el patron de snapshotting establecido en el resto de la funcion. La causa: durante la implementacion GREEN, el helper aun no existia (se creo en el REFACT posterior). La solucion para evitar esto en futuros bloques: implementar los helpers en la primera migracion GREEN, antes que las funciones que los usan, siguiendo el orden canonico Extensions→Functions→Tables.
+
+**retry_count como coordinacion Engine↔BD requiere contrato explicito en SPEC**
+La columna retry_count fue agregada a projections como interfaz de coordinacion entre la BD y el Engine Python. Sin embargo, la SPEC §4.2 no define explicitamente el mecanismo de reintento ni el umbral N para transicion a error_fatal. El valor N=3 fue asumido por el implementador. Para evitar ambiguedades en el Engine Python, el contrato de retry (valor de N, comportamiento en error_fatal, formato del log de error) debe documentarse en la SPEC antes de que el Engine Python sea implementado en Fase 2.
+
+---
+
+### Lecciones Clave y Recomendaciones
+
+**Leccion 19 — Los tests funcionales son la inversion mas rentable del ciclo TDD en BD**
+Un test que verifica `COUNT(*) = 2 FROM projections WHERE status='calculating'` es inmune a cualquier refactorizacion interna de la funcion que lo produzca. Un test que verifica `pg_proc.prosrc LIKE '%SKIP LOCKED%'` falla si la funcion es reescrita con la misma semantica pero distinto texto. La regla para toda suite de tests de Bloque 5 en adelante: los tests validan QUE ocurre (estado observable en tablas), no COMO ocurre (implementacion interna). Esta regla debe incluirse como criterio de aceptacion en el DoD de las tareas RED.
+
+**Leccion 20 — El patron CLAIM TOKEN es el contrato correcto para funciones de coordinacion asincrona**
+Cuando una funcion SQL se llama `fn_compute_ASYNC_scoring`, la asincronidad ya esta en el nombre: la funcion SQL no debe calcular, solo reclamar el trabajo para que el agente externo (Engine Python) lo procese. El patron correcto: (1) snapshot de configuracion, (2) check de kill-switch, (3) UPDATE atomico de estado (pending→calculating) con SKIP LOCKED, (4) log de inicio. El procesamiento va en el Engine. Este patron debe replicarse para cualquier funcion de coordinacion con procesos externos en Fase 2 y posteriores.
+
+**Leccion 21 — Los helpers SECURITY DEFINER deben preceder a las funciones que los usan en la misma migracion**
+El Bloque 5 creo los helpers en una migracion REFACT separada (block_5a_refact.sql) porque en la migracion GREEN (block_5a.sql) los helpers no existian aun. Esto obligo a dos reescrituras de las funciones principales: una en GREEN (sin helpers) y otra en REFACT (con helpers). El orden correcto para futuros bloques es: helpers primero en la migracion GREEN, funciones principales despues. Esto elimina la necesidad de reescribir las funciones en REFACT y reduce el numero de CREATE OR REPLACE necesarios.
+
+**Leccion 22 — Los contratos de coordinacion BD↔Engine deben documentarse en SPEC antes de implementar**
+La columna retry_count, el umbral N=3 para error_fatal y el formato del log de error son contratos de interfaz entre la BD y el Engine Python. Fueron implementados con supuestos razonables (N=3) porque la SPEC no los define. Cuando el Engine Python sea implementado en Fase 2, podria asumir N diferente, generando inconsistencias silenciosas. La regla: cualquier estado de columna que sea leido por un proceso externo (Engine Python, Edge Functions, pg_cron) debe tener su contrato definido en la SPEC con valores concretos antes de ser implementado en ambos lados.
